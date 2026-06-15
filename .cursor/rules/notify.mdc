@@ -1,0 +1,184 @@
+---
+description: Sending email and SMS notifications from Mug workflows — ctx.notify.email() with CTA buttons, ctx.surfaceUrl() for surface links, fromName, local dev delivery, and BYOK configuration.
+globs: ["workflows/**"]
+---
+
+# Mug Notifications
+
+Send email or SMS notifications from workflows. Mug handles delivery (Resend for email, Twilio for SMS), styled HTML templates, and surface link generation.
+
+Full API reference (all options, template rendering, BYOK configuration): `.mug/docs/notifications.md`
+
+## ctx.notify.email(options)
+
+```typescript
+await ctx.notify.email({
+  to: string;            // recipient email address
+  message: string;       // email body (supports basic markdown: **bold**, *italic*, lists)
+  subject?: string;      // email subject line (default: "Notification from Mug")
+  fromName?: string;     // sender name (default: workspace name, e.g. "Narvick Construction")
+  cta?: {
+    label: string;       // button text, e.g. "Review Request"
+    url: string;         // button URL — use ctx.surfaceUrl() for surface links
+  };
+});
+```
+
+## ctx.notify.sms(options)
+
+```typescript
+await ctx.notify.sms({
+  to: string;       // phone number (E.164 format: +1234567890)
+  message: string;  // message body (plain text, no markdown)
+});
+```
+
+## ctx.surfaceUrl(surfaceId, path?)
+
+Generate a URL to a surface. Returns the correct URL for dev (localhost) and production (workspace subdomain).
+
+```typescript
+ctx.surfaceUrl("approvals")
+// dev:  "http://localhost:8787/approvals"
+// prod: "https://my-workspace.mug.work/approvals"
+
+ctx.surfaceUrl("portal", `/row/${requestId}`)
+// dev:  "http://localhost:8787/portal/row/42"
+// prod: "https://my-workspace.mug.work/portal/row/42"
+```
+
+Always use `ctx.surfaceUrl()` instead of hardcoding URLs.
+
+## Email templates from files
+
+Store HTML templates in `files/` and load at runtime:
+```typescript
+const template = await ctx.fileText("templates/weekly-report.html");
+const body = template.replace("{{name}}", name);
+await ctx.notify.email({ to, message: body, subject: "Report" });
+```
+Drop templates in `files/templates/`, run `mug push` to upload.
+
+## Local dev
+
+`dev.email` in `mug.json` is auto-set to the logged-in user's email. All dev emails redirect there:
+```json
+{ "dev": { "email": "developer@example.com" } }
+```
+
+Subject shows original recipient: `[DEV → manager@company.com] New request`. Override by editing `mug.json`.
+
+## Notification Patterns
+
+### Form submission notification
+
+```typescript
+workflow("handle-intake", async (ctx) => {
+  const { name, email, issue } = ctx.params as Record<string, string>;
+  await ctx.exec("main", "INSERT INTO tickets (...) VALUES (...)", [name, email, issue]);
+
+  await ctx.notify.email({
+    to: "support@company.com",
+    subject: `New ticket from ${name}`,
+    message: `**${name}** (${email}) submitted a support ticket:\n\n${issue}`,
+    cta: { label: "View Tickets", url: ctx.surfaceUrl("tickets") },
+  });
+});
+```
+
+### Approval result notification
+
+```typescript
+workflow("handle-approval", async (ctx) => {
+  const params = ctx.params as Record<string, string>;
+  const status = params.action === "approve" ? "approved" : "denied";
+  await ctx.exec("main", "UPDATE requests SET status = ? WHERE id = ?", [status, params.id]);
+
+  await ctx.notify.email({
+    to: params.employee_email,
+    subject: `Your request was ${status}`,
+    message: `Your request for ${params.start_date} to ${params.end_date} has been ${status}.`,
+    cta: { label: "View Details", url: ctx.surfaceUrl("portal", `/row/${params.id}`) },
+  });
+});
+```
+
+### Scheduled report
+
+```typescript
+workflow("weekly-summary", async (ctx) => {
+  const open = await ctx.query("main", "SELECT COUNT(*) as count FROM tickets WHERE status = 'open'");
+  await ctx.notify.email({
+    to: "owner@company.com",
+    subject: `Weekly Summary — ${new Date().toLocaleDateString()}`,
+    message: `**Open tickets:** ${open[0].count}`,
+    cta: { label: "View Dashboard", url: ctx.surfaceUrl("dashboard") },
+  });
+});
+```
+
+### SMS (urgent/time-sensitive)
+
+```typescript
+await ctx.notify.sms({
+  to: "+1234567890",
+  message: `New job assigned: ${job.address}. Reply ACCEPT or DECLINE.`,
+});
+```
+
+### BYOK — bring your own keys
+
+```bash
+mug secret set RESEND_API_KEY=re_xxxxx
+mug secret set TWILIO_ACCOUNT_SID=AC_xxxxx
+mug secret set TWILIO_AUTH_TOKEN=xxxxx
+mug secret set TWILIO_PHONE_NUMBER=+1xxxxx
+```
+
+BYOK sends bypass Mug's notification metering.
+
+AI also supports BYOK — `mug secret set ai.anthropic=<key>` for unlimited AI. See `.mug/docs/ai.md`.
+
+## Complete Example
+
+```typescript
+// workflows/handle-request.ts
+import { workflow } from "@mugwork/mug";
+
+workflow("handle-request", async (ctx) => {
+  const p = ctx.params as Record<string, string>;
+  await ctx.exec("main", `INSERT INTO requests (id, employee_name, employee_email, type, start_date, end_date, hours, reason, approver_email, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`,
+    [crypto.randomUUID(), p.employee_name, p.employee_email, p.type, p.start_date, p.end_date, p.hours, p.reason, "manager@company.com"]);
+
+  await ctx.notify.email({
+    to: "manager@company.com",
+    subject: `Time-off request from ${p.employee_name}`,
+    message: `**${p.employee_name}** is requesting ${p.type} from ${p.start_date} to ${p.end_date} (${p.hours} hours).\n\nReason: ${p.reason}`,
+    cta: { label: "Review Request", url: ctx.surfaceUrl("approvals") },
+  });
+  return { status: "pending" };
+});
+
+// workflows/handle-approval.ts
+import { workflow } from "@mugwork/mug";
+
+workflow("handle-approval", async (ctx) => {
+  const p = ctx.params as Record<string, string>;
+  const status = p.action === "approve" ? "approved" : "denied";
+  await ctx.exec("main", "UPDATE requests SET status = ?, reviewed_at = datetime('now') WHERE id = ?", [status, p.id]);
+
+  await ctx.notify.email({
+    to: p.employee_email,
+    subject: `Your time-off request was ${status}`,
+    message: `Your ${p.type} request for ${p.start_date} to ${p.end_date} has been **${status}**.`,
+    cta: { label: "View My Requests", url: ctx.surfaceUrl("portal") },
+  });
+  return { id: p.id, status };
+});
+```
+
+For form creation, see the `/form` skill.
+For portals and approval inboxes, see the `/portal` skill.
+For workflow logic, see the `/workflow` skill.
+For custom branding on email notifications (logo in header, accent color on CTA buttons), add a `branding` section to `mug.json` — see `.mug/docs/notifications.md`.

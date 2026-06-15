@@ -1,0 +1,46 @@
+name: Bug Report
+description: Report a bug with Mug
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - CLI (mug dev, mug deploy, etc.)
+        - Connectors / Data Sync
+        - Workflows
+        - Surfaces (forms, portals)
+        - AI / Agents
+        - Notifications (email, SMS)
+        - Slack
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: doing
+    attributes:
+      label: What were you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: CLI version, OS, relevant files, error messages

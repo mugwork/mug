@@ -1,0 +1,348 @@
+---
+description: Mug workspace instructions
+globs: ["**/*.ts", "**/*.json"]
+---
+
+<!-- This file is managed by Mug. Everything between mug:start/mug:end is auto-generated. Use user:start/user:end block to add any custom context for your agent. -->
+
+<!-- user:start -->
+
+<!-- user:end -->
+
+<!-- mug:start -->
+## Mug Workspace
+
+This is a Mug workspace. Write TypeScript using Mug's framework APIs.
+
+### Framework APIs
+
+**Connectors** — sync external data and perform outbound actions (use `/connector` skill for guided setup):
+- `import { source } from "@mugwork/mug"` — read-only sync: `source({ name, database, tables: [{ name, primaryKey, fetch(ctx) }] })`
+- `import { connector } from "@mugwork/mug"` — bidirectional: `connector({ name, database, tables: [{ name, primaryKey, fetch(ctx), get(ctx, id), actions: { create(ctx, fields), update(ctx, id, fields), delete(ctx, id) } }] })`
+- `ctx.credential(name?)` — returns API key/token from workspace secrets
+- Place connector files in `connectors/` — auto-discovered by `mug deploy`
+- Trigger sync: `curl -X POST http://localhost:8787/sync/my-api`
+
+**AI** — multi-provider with tier-based routing (use `/ai` skill for guided setup, `.mug/docs/ai.md` for full reference):
+- `ctx.ai("fast", { prompt, system })` — use workspace's fast model (cheapest). **You must set `prompt` (user message) and `system` (system prompt).**
+- `ctx.ai("balanced", { prompt, system })` — mid-tier model. `ctx.ai("powerful", { prompt, system })` — strongest model.
+- `ctx.ai("auto", { prompt, system })` — Mug picks the tier based on prompt complexity
+- `ctx.ai("provider/model", { prompt, system })` — direct call: `"openai/gpt-5.4-nano"`, `"anthropic/claude-sonnet-4-6"`
+- Tiers configured in `mug.json` `ai.routing` (fast/balanced/powerful → provider/model)
+- **BYOK**: `mug secret set ai.anthropic=<key>` → set `"ai.anthropic"` in `mug.json` `ai.billing` for unlimited AI at zero Mug credit cost
+- Per-call billing: `billing: "ai.anthropic"` or `billing: "mug-metered"`. Per-workflow: `workflow(name, handler, { billing: "ai.anthropic" })`
+
+**Search** — find relevant data across synced sources:
+- FTS5 auto-indexing: every synced text column gets a full-text index automatically. Query via `ctx.query(db, "SELECT * FROM {table}_fts WHERE {table}_fts MATCH ? ORDER BY rank", [keyword])`
+- `ctx.search(query, { source?, limit? })` — semantic similarity search. Returns `{ score, table, primaryKey, row }[]`. Requires deployed workspace (uses Vectorize).
+- `ctx.ask(question, { source?, limit?, model?, system? })` — full RAG: searches relevant data, feeds to LLM, returns grounded answer. Returns `{ answer, sources, usage }`.
+- `ctx.embed(texts)` — generate vector embeddings for an array of strings (batches of 100). Returns `number[][]`. Used internally by `ctx.search`, but available for custom similarity matching.
+- Three layers: FTS5 for keyword search (free, local), `ctx.search()` for semantic (deployed), `ctx.ask()` for natural language answers (deployed).
+- See `.mug/docs/api.md` for full signatures and `.mug/docs/ai.md` for when to use each layer.
+
+**Workflows** — multi-step automation (use `/workflow` skill for guided setup):
+- `workflow(name, async (ctx) => { ... }, options?)` — register a workflow. Options: `{ description?, schedule?: string | ScheduleConfig, billing?, webhook?: true | { auth, secret }, inbound?: "sms" | "email" | "slack", trigger?: { source, table?, on?, includeInitialSync? } }`
+- **ScheduleConfig** — `{ weekday?, nth? (1-5 or -1=last), time? ("HH:MM"), interval? ("15m"/"1h"), between? (["14:00","16:00"]), skipHolidays? (true or "US"), skipDates? (["YYYY-MM-DD"]), cron?, timezone? }`
+- Every workflow must have a `description` in options. Add `//` comments above each `ctx.*` call and `return` — these appear as step descriptions in the explorer.
+- `ctx.query(database, sql, params?)` — read from any workspace database
+- `ctx.exec(database, sql, params?)` — write to any workspace database
+- `ctx.ai()` — see **AI** section above
+- `ctx.notify.email({ to, message, subject?, fromName?, cta? })` / `.sms({ to, message })` / `.slack({ to, message, blocks?, thread_ts? })` / `.channel(name, options)` for custom channels
+- `ctx.surfaceUrl(surfaceId, path?)` — generate URL to a surface (dev/prod-aware)
+- `ctx.file(path)` — read a file from `files/` as ArrayBuffer (R2 in prod, local in dev)
+- `ctx.fileText(path)` — read a file as UTF-8 string
+- `ctx.secret(name)` — read a workspace secret by name (from `.mug/secrets`). Throws if not found.
+- `ctx.waitFor(eventName, options?)` — pause workflow until an external event arrives. Returns `{ payload, type, timedOut }`. Options: `{ timeout?: "1 hour" | "24 hours", message?: string }`. Zero cost while waiting.
+- `ctx.waitForUrl(eventName)` — generate a one-time callback URL for embedding in notifications. Returns a URL that, when visited, sends the event to the waiting workflow.
+- `ctx.http(url, options?)` — outbound HTTP request. Returns `{ status, headers, body, json, ok }`. Throws on non-2xx by default (`throwOnError: false` to handle manually). Auto-retries connection errors and 429 with exponential backoff. Options: `{ method?, headers?, body?, throwOnError?, retry?: { attempts? } | false, timeout?, sign?: { secret, header? } }`
+- `ctx.respond(body, status?)` — set a custom HTTP response for webhook-triggered workflows. First call wins. Use for Slack challenge verification, Twilio TwiML, etc. If not called, webhook returns default `{ ok: true }`.
+- `ctx.action(connectorName)` — returns a handle for outbound operations: `.read(table, id)`, `.create(table, fields)`, `.update(table, id, fields)`, `.delete(table, id)`, `.upsert(table, id, fields)`. **Workflow-only** — all external writes go through `ctx.action()`. Transforms auto-snapshot before writing (for rollback). Returns `ActionResult` with `{ connector, table, operation, recordId, data, snapshot, operationId }`.
+- `ctx.rollback(actionId)` — undo a prior action using its stored before-snapshot. Executes the inverse as a new action. `ctx.rollbackRun(workflowRunId)` rolls back all actions from a run in reverse order.
+- `maxOperations` — default 100 per workflow run. Override: `workflow(name, handler, { maxOperations: 500 })`. Counts all `ctx.action()` calls.
+- Place workflow files in `workflows/` — auto-discovered by `mug deploy`
+
+**Notifications** — email and SMS from workflows (use `/notify` skill for guided setup):
+- `ctx.notify.email({ to, message, subject?, fromName?, cta?: { label, url } })` — styled HTML email with optional CTA button
+- `ctx.notify.sms({ to, message })` — SMS via Twilio (E.164 format)
+- `ctx.surfaceUrl("approvals")` — returns correct URL for dev (`localhost:8787`) or prod (`workspace.mug.work`)
+- In local dev, emails send via Resend (real delivery) + console log
+- BYOK: set your own Resend/Twilio keys via `mug secret set` for unlimited sends
+- **Usage limits**: email/SMS/AI have per-tier limits. `ctx.notify` and `ctx.ai` throw when limits are exceeded — catch in workflows to handle gracefully. Enable overages at mug.work or `mug billing --overage <meter>=on` to allow per-unit billing beyond limits. BYOK bypasses metered limits. See `.mug/docs/billing.md` for tier details.
+
+**Slack surface** — send Block Kit messages, slash commands, interactive buttons, Home Tab (use `/slack` skill for guided setup):
+- `ctx.notify.slack({ to, message, blocks?, thread_ts? })` — send messages with raw Block Kit. `to` accepts `#channel-name`, `channel-name`, or channel ID. Names resolve automatically. Bot auto-joins public channels; private channels need manual invite via Integrations tab.
+- `ctx.slack.updateMessage({ channel, ts, text?, blocks? })` — update a message after an action (replace buttons with result)
+- `ctx.slack.openModal({ triggerId, view })` — open a modal from a slash command workflow
+- Action ID convention: `mug:<workflow>:<action>` routes button clicks to specific workflows
+- Slash command trigger: `"trigger": { "type": "slack_command", "command": "/dispatch" }` in workflow config
+- Event trigger: `"trigger": { "type": "slack_event", "event": "message" }` in workflow config
+- Slack data auto-synced: `slack_users` (user_id, email, display_name) and `slack_channels` (channel_id, name) tables
+- Block Kit reference: agents already know Block Kit — use it directly, no Mug abstraction layer
+- `ctx.slackApiCall(method, body)` — call any Slack Web API method directly (e.g., `reactions.add`, `pins.add`, `users.info`). Requires SLACK_BOT_TOKEN.
+- Slack API docs (LLM-optimized): `https://docs.slack.dev/apis/web-api.md`
+- **Agent DMs**: set `"chat": true` in agent.json + `"defaultAgent"` in slack.json → threaded AI conversations via Slack's Agents & AI Apps. Multi-agent routing via suggested prompts and @mentions. See `.mug/docs/slack.md`.
+
+**Inbound messages** — receive SMS replies, email replies, Slack interactions:
+- Configure in workflow options: `workflow("handle-sms", handler, { inbound: "sms" })`
+- Webhook URLs shown after `mug deploy`: `https://api.mug.work/inbound/sms/<workspace>`, etc. Run `mug webhooks` to see all URLs.
+- SMS workflow receives: `ctx.params = { channel: "sms", from: "+1...", body: "YES", messageSid: "SM..." }`
+- Email workflow receives: `ctx.params = { channel: "email", from: "user@...", subject: "Re: ...", body: "..." }`
+- Slack workflow receives: `ctx.params = { channel: "slack", userId: "U...", actionId: "approve_btn", actionValue: "..." }`
+- **Pattern**: "send and wait for reply" uses two workflows — one sends + sets a status field in DB, the other catches the inbound reply + checks that field to determine what to do
+
+**Forms** — collect data from users (use `/form` skill for guided setup):
+- Config-driven JSON files in `surfaces/<name>.json` with `"type": "form"` — form is live immediately in `mug dev`
+- Field types: text, email, phone, number, select, multiselect, date, textarea, file, calculated, hidden
+- **Field names must be unique across the entire form** (including across pages and showWhen fields) — duplicates cause silent data loss. `mug form validate` catches this.
+- Field properties: `default` (static value), `prefill` (from auth row, URL param, or DB), `locked` (read-only + server-enforced), `helpText` (hint below label), `validate` (custom rules with error messages)
+- Validation + help text support `{{column}}` templates resolved from auth row (e.g., `helpText: "You have {{pto_hours}} hours available"`)
+- Conditional fields: `showWhen: [{ field, op, value }]` (ops: eq, neq, in, gt, lt, filled, empty)
+- Multi-page: `pages: [{ id, title, fields }]` with optional branching
+- Access modes: `public` (anyone), `identify` (verify email/phone), `auth` (restricted to known users — also provides auth row for prefill)
+- Handler workflow receives submissions via `ctx.params`. Place handler in `workflows/handle-<name>.ts` — auto-discovered.
+- Auth prefill: `prefill: { source: "auth", column: "name" }` auto-fills from the user's auth row. Combine with `locked: true` for identity fields. Use `access.query` with `:identity` placeholder for computed columns (JOINs, calculations) — no denormalized state needed.
+- Dynamic forms: `ctx.collect(options)` creates forms programmatically at runtime (advanced — see `.mug/docs/forms.md`)
+- Breadcrumbs: add `?from=/portal&fromLabel=Back to Portal` to surface links — target surface shows a back link above the header
+
+**Portals** — tabbed, section-based data pages (use `/portal` skill for guided setup):
+- Config-driven JSON files in `surfaces/<name>.json` with `"type": "portal"`
+- `tabs` — array of tabs, each with `id`, `label`, and `sections` array. Single-tab portals hide the tab bar. Tab options: `color` (text/underline color), `countQuery` (dynamic badge count).
+- Top-level `sections` on the config render above the tab bar and stay visible on all tabs. Stats items support `href` to make cards clickable links (e.g., `"href": "?tab=pending"`).
+- Section types: `table` (paginated rows → detail pages → action buttons), `stats` (metric cards), `progress` (progress bars), `text` (markdown), `chart` (bar/donut SVG), `gallery` (image grid), `accordion` (collapsible container)
+- Table sections have `query`, `columns`, `detail`, `actions`, `pageSize`. Use `:user` in SQL for session identity, `:auth.column` for any auth table column.
+- Action button styles: `"success"` (green), `"danger"` (red), `"warning"` (amber), `"primary"` (accent), `"default"` (gray). Add `"color": "#hex"` for custom override. Use success/danger for approve/deny.
+- Actions are **optimistic** — button replaced instantly with status message. `afterMessage`: custom text (`{{timestamp}}` for date/time). `afterColor`: hex color for the status message. `afterActions`: follow-up buttons (e.g., revoke/undo) that fire the same workflow.
+- **Timeline playback**: action buttons can trigger scripted visual sequences instead of workflows. Set `"timeline"` (array) instead of `"workflow"` (string). Events: `toast` (notification popup), `preview` (email/SMS card), `stream` (char-by-char AI-style text), `update` (swap table cell value), `highlight` (pulse-highlight row via `row` or button via `action`, with optional `message` badge). Each event has `delay` (seconds from trigger). Button disabled during playback.
+- **Autoplay**: portal config accepts `"autoplay": []` — same event array, fires on page load. Use for guided demos (`highlight` with `delay: 0`) or AI summary streams on dashboards.
+- **Embed mode**: append `?embed=true` to any surface URL to strip header chrome (logo, session, logout, breadcrumbs) for iframe embedding. CSP allows framing from `mug.work` and `*.mug.work`.
+- Stats `valueColor`: `"match"` (inherit border color — default when `color` set), `"neutral"` (dark text), or hex. Badge `badgeColors`: `{ "PTO": "#3b82f6" }` for custom non-status values.
+- Access modes: same as forms (`public`, `identify`, `auth`)
+- Column `dateFormat`: `"short"` for compact dates (`5/15/26, 3:30 PM`). Default is long format (`May 15, 2026, 3:30 PM`).
+- Column/field/stat formats: `"currency"` ($X,XXX.XX in tables, whole in stats), `"currency-whole"` ($X,XXX), `"currency-short"` ($12.5K/$1.2M), `"number"` (comma-separated), `"percent"` (XX%). Stat values that overflow auto-abbreviate to K/M.
+- Chart sections: `labelColumn`/`valueColumn` default to `"label"`/`"value"`. `colors`: `{ "complete": "#16a34a", "error": "#ef4444" }` maps label values to colors.
+- All `date`/`datetime` columns render in the workspace timezone (`settings.timezone` in mug.json). Override per-surface with `"timezone": "America/New_York"` in the surface JSON.
+
+**Demo mode** — share deployed auth'd surfaces with stakeholders without requiring them to verify:
+- `mug demo enable <surface> --as <email-or-phone>` — surface renders pre-authenticated as that identity
+- Use `_home` as the surface ID to demo the workspace home screen (e.g. `mug demo enable _home --as demo@example.com`)
+- `mug demo disable <surface>` / `mug demo status` — manage active demos
+- Notification routing (automatic, no code guards needed):
+  - `--notify demo-user` (default) — notifications redirect to `--as` identity (matching channels only, others suppressed)
+  - `--notify dev` — notifications redirect to the developer's account email
+  - `--notify off` — suppress all notifications (logged but not sent)
+  - Per-channel overrides: `--email-to <addr>`, `--sms-to <phone>`, `--slack-to <channel>` (override any mode)
+- `--no-workflows` — suppress workflow execution entirely (surface still renders and accepts input)
+- `ctx.isDemo` is `true` in demo workflows — use to guard non-notification side effects (destructive writes, external API calls)
+- Create a demo persona (e.g. `demo@example.com`) in your auth table with curated data. The demo viewer sees exactly what that user would see.
+
+**Branding** — custom logo and accent color on all surfaces and emails:
+- Configure in `mug.json`: `"branding": { "logo": "assets/logo.png", "logoSquare": "assets/icon.png", "accentColor": "#1a5276", "ogImage": "assets/og-image.png" }`
+- Two logo variants: `logo` (rectangle, for headers) and `logoSquare` (square, for icons). If only one provided, used everywhere.
+- `ogImage` — custom 1200x630 PNG for link previews (Slack, iMessage, LinkedIn, Discord). Falls back to Mug default if not set.
+- Logo paths are relative to workspace root. Uploaded to R2 on `mug deploy`, served at `https://<workspace>.mug.work/_branding/`
+- Accent color applies to buttons, links, focus rings, progress bars via CSS variable `--accent`. Also tints the browser favicon.
+- All surfaces automatically emit Open Graph and Twitter Card meta tags (title, description, image) for link previews.
+- Emails automatically use workspace branding (logo in header, accent on CTA buttons)
+- **Per-surface overrides**: add `"branding": { "logoSquare": "files/logo.png", "accentColor": "#2563eb" }` to any surface JSON to override workspace branding for that surface. Surface branding takes precedence; workspace branding is the fallback.
+- In dev, logos served from local files. Changes to mug.json branding hot-reload.
+
+**Home Screen** — workspace root URL (`subdomain.mug.work/`) shows branded auth + surface directory:
+- By default, the home screen requires authentication — visitors verify via email/phone before seeing content.
+- **Public mode**: add `"access": { "mode": "public" }` to `_home.json` to show public surfaces without auth. Optional `"showLogin": true` adds a "Log in" button (only renders if at least one surface has non-public access).
+- Auth is configless: scans workspace owner/admin + all surface auth tables. No setup needed.
+- Auth flow: demo mode check → session cookie check → auth gate (email/phone verification).
+- After login, shows a directory of surfaces the user has access to.
+- Demo mode: `mug demo enable _home --as <identity>` — the home screen is surface ID `_home` for demo purposes.
+- Configure layout in `surfaces/_home.json`: `{ "title": "...", "description": "...", "groups": [...] }`
+- `title` → rendered as heading in header, page title, OG meta (fallback: title-cased workspace slug). `description` → rendered below title in header + OG/Twitter meta.
+- Groups combine a button row (actions) with card list (destinations):
+  `{ "label": "HR", "description": "...", "icon": "users", "buttons": [{ "surface": "time-off", "label": "Request Time Off" }], "cards": [{ "surface": "portal", "label": "Dashboard", "description": "...", "icon": "layout-dashboard" }] }`
+- Optional `color` on groups (tints border + bg + title + icons), buttons (bg override), cards (colored border + tint).
+- Optional `icon` on groups and cards — any [Lucide icon](https://lucide.dev) name (e.g., `"hard-hat"`, `"receipt"`, `"bar-chart-3"`).
+- Optional `"collapsible": true` on groups — renders as accordion. `"collapsed": true` starts closed (default: open).
+- Named color palette: Red `#dc2626`, Orange `#ea580c`, Gold `#ca8a04`, Brown `#92400e`, Green `#16a34a`, Teal `#0f766e`, Blue `#2563eb`, Navy `#1e3a8a`, Purple `#7c3aed`, Pink `#db2777`, Maroon `#6b2140`, Gray `#475569`.
+- Surfaces not in any group appear at the bottom as default cards.
+- No `_home.json` = all surfaces shown alphabetically as cards.
+- Uses workspace branding (logo, accent color, OG meta). Fully mobile responsive.
+- In dev, `localhost:8787/` shows home screen with all surfaces and dev identity. Changes to `_home.json` hot-reload.
+
+**CLI commands:**
+```bash
+mug start                            # get started — orientation + progress checklist
+mug dev                              # start local dev server (auto-detects ports from 8787)
+mug dev --port <port>                # pin to a specific port
+mug dev --tunnel                     # expose via Cloudflare Quick Tunnel (requires cloudflared)
+mug shutdown                         # gracefully stop the running dev server
+mug run <workflow>                   # run workflow locally
+mug run <workflow> --production      # run in production (CF Workflows)
+mug logs [workflow]                  # view execution log (--json, --limit N, --production)
+mug status <workflow> <instanceId>   # check production status (--json)
+mug sql <db> <sql>                   # run SQL against databases/<db>.db (--json, --production, --dev, --port) (alias: mug query)
+mug usage                            # usage across all 6 billing dimensions (--json, --period)
+mug workspace plan                   # view or change workspace plan tier (opens Stripe for paid tiers)
+mug billing                          # view billing + per-meter overage settings
+mug billing --overage <meter>=on|off # toggle overage per meter (e.g. operations=on)
+mug billing --cap <meter>=<dollars>  # set overage cap per meter (e.g. ai_credits=50)
+mug billing --email <address>       # set billing notification email
+mug validate                         # check workspace for issues before deploying (--verbose, --json)
+mug deploy                           # deploy to production (includes database push)
+mug push databases/<name>            # upload local database to production
+mug push --all                       # upload all local files and databases
+mug push --all --force               # push all without confirmation prompt
+mug pull databases/<name>            # download production database locally
+mug pull --all                       # download all remote files and databases
+mug form init <name>                 # scaffold form + handler workflows
+mug form validate                    # check form schemas for errors
+mug form list                        # list forms and URLs
+mug portal init <name>               # scaffold portal config in surfaces/
+mug portal list                      # list portal surfaces and URLs
+mug secret set KEY=VALUE             # store secret (--production to sync)
+mug secret list                      # show stored secret keys
+mug secret remove KEY                # remove a secret
+mug connector search <query>         # search community connector catalog
+mug connector clone --slug <name>   # clone connector from catalog (spec + scaffold)
+mug connector discover <product>     # record API availability
+mug connector gather --slug <name>   # produce OpenAPI spec
+mug connector verify --slug <name>   # verify against live API
+mug connector scaffold --slug <name> # generate TypeScript source
+mug connector init <product>         # full pipeline (discover→gather→verify→scaffold)
+mug auth <provider>                  # connect provider via OAuth (e.g. airtable)
+mug demo enable <surface> --as <id>  # share surface pre-auth'd (--expires, --notify, --no-workflows)
+mug demo disable <surface>           # revoke demo access
+mug demo status                      # show active demos
+mug slack setup                       # set up Slack app (interactive — creates app, stores credentials)
+mug webhooks                          # list webhook URLs, inbound channels, event triggers
+mug brain <agent>                     # inspect agent brain memory (struggles, entities, outcomes, sessions)
+mug brain <agent> struggles           # review unresolved struggles — knowledge gaps and edge cases
+mug login                             # authenticate via email verification
+mug clone [name]                     # clone existing workspace from Mug cloud to local machine
+mug create workspace <name>          # register workspace (--subdomain, --tier free|starter|pro|business)
+mug workspace status                 # workspace info and plan tier
+mug workspace plan                   # view or change plan tier
+mug workspace invite <email>         # invite admin to workspace
+mug workspace transfer <email>       # transfer ownership (sends invite)
+mug workspace remove <email>         # remove member
+mug workspace members                # list members + pending invites
+mug workspace cancel-invite <id>     # cancel a pending invite
+mug workspace check-subdomain <slug> # check subdomain availability
+mug workspace archive                # archive workspace (365-day retention)
+mug workspace restore                # restore an archived workspace
+mug workspace delete                 # permanently delete archived workspace
+mug workspace export                 # export workspace data (--categories, --all) as .tar
+mug account email <new-email>        # change email (verifies both old and new)
+mug account invites                  # show pending incoming and sent invites
+mug account accept <id>              # accept a workspace invite
+mug account decline <id>             # decline a workspace invite
+mug whoami                            # show account, workspaces, and pending invites
+mug issue                            # file a bug report or feature request
+```
+Use `/start` for guided onboarding and to see what to build next. Use `/mug dev`, `/mug update`, or `/mug deploy` to run CLI commands via the `/mug` skill.
+
+### Building Sources
+
+Use `/connector <product>` to build a source — it walks through the full pipeline step by step.
+
+The pipeline: **discover → gather → verify → scaffold**. You research the API, the CLI handles storage, normalization, and code generation. Run `mug connector --help` for CLI reference.
+
+**Source config in mug.json** (metadata only — no credentials here):
+```json
+"sources": {
+  "<name>": {
+    "auth": { "type": "bearer|api-key|basic|oauth2", "value": "<credential>" },
+    "baseUrl": "<API root URL>",
+    "syncs": { "<sync-name>": { "database": "<db>", "schedule": "*/15 * * * *" } }
+  }
+}
+```
+
+### Credentials
+
+Store API keys and secrets in `.mug/secrets` (gitignored), not in mug.json:
+```bash
+mug secret set AIRTABLE_API_KEY=pat_xxxxx    # writes to .mug/secrets
+mug secret list                               # shows keys (not values)
+```
+Secrets are loaded automatically by `mug dev` and sent to production by `mug deploy`.
+
+### Deploy to Production
+
+```bash
+mug secret set MUG_API_KEY=<your-key>          # one-time setup (workspace API key)
+mug dev                                        # test locally first
+mug validate                                   # check for issues (use --json for structured output)
+mug deploy                                     # bundle and deploy to Cloudflare
+```
+MUG_API_KEY is used for all production operations: deploy, run --production, status, usage.
+
+### Platform Docs
+
+Full API reference with detailed examples in `.mug/docs/`:
+- `.mug/docs/api.md` — **unified API reference**: all ctx.* methods, ctx.params shapes, error handling, data patterns, mug.json config, CLI quick reference
+- `.mug/docs/sources.md` — SourceDef, pagination, rate limits, sync config
+- `.mug/docs/workflows.md` — workflow registration, scheduling, two-workflow pattern, webhook workflows
+- `.mug/docs/forms.md` — field types, conditionals, multi-page, access modes, file uploads
+- `.mug/docs/portals.md` — portal tabs, section types (table/stats/progress/text/chart/gallery/accordion), actions, :user queries
+- `.mug/docs/notifications.md` — email templates, CTA buttons, markdown support, BYOK
+- `.mug/docs/cli.md` — complete CLI command reference
+- `.mug/docs/demo.md` — demo mode: notification routing, workflow suppression, ctx.isDemo
+- `.mug/docs/slack.md` — slack.json schema, Home Tab sections, shortcuts, unfurl, deploy process
+
+### Conventions
+
+- **Always filter deleted rows** when querying synced data: `WHERE _mug_deleted_at IS NULL`. Synced tables have `_mug_synced_at` and `_mug_deleted_at` system columns.
+- **databases/ is the local source of truth.** Each `databases/<name>.db` is a SQLite file. `mug sql` reads/writes these directly — no dev server needed. `mug push`/`mug pull` sync them with production.
+- When running `mug dev`, databases are seeded into Durable Objects on startup and written back on shutdown (also on `mug shutdown`). If data seems stale after a workflow run, the DO writeback may be pending — check `databases/<name>.db` directly.
+- The dev server has **hot reload** — file changes to surfaces, workflows, agents, and connectors auto-refresh the browser. The workspace explorer at `/explorer` updates live.
+- Test individual workflows via `/_dev/run/<workflow-name>` (POST) — returns step-by-step results with timing.
+- The `_mug_ops` database is implicit (workflow_runs, workflow_steps)
+- All `ctx.*` methods throw on failure — use try/catch for graceful error handling
+- Use `"auto"` for AI calls — smart routing picks the cheapest model that works
+- Workflows can be triggered by schedule, CLI (`mug run`), form submissions, portal actions, or webhooks
+
+### Agents
+
+**Custom AI agents** — autonomous multi-step work with tools, memory, and structured output.
+
+Each agent is a folder in `agents/<name>/` with:
+- `agent.json` — config: model, tools, caps, memory, chat, requireApproval
+- `SOUL.md` — core identity and instructions (human-authored soul, always loaded)
+- `email.json` — (optional) email surface config: address, filter, categories, fallback
+- `MANTRA.md` — self-knowledge narrative (agent-authored, exported by `mug pull`)
+- `skills/` — agent-specific skills (auto-discovered, loaded on demand via `load_skill`)
+- `BRAIN.db` — persistent memory: logs, journal, mantra (runtime-managed)
+
+Shared skills available to all agents: `agents/shared-skills/<skill-name>/SKILL.md`
+
+**agent.json fields:**
+- `model`: `"claude-sonnet"` (fixed) or `{ "fast": "claude-haiku", "balanced": "claude-sonnet", "powerful": "claude-opus" }` (dynamic routing)
+- `tools`: `["query", "search", "ask", "notify", "http", "workspace", "ai", "trigger_workflow"]`
+- `workflows`: `["invoice-followup", "escalation"]` — allowlist for trigger_workflow (agent can only trigger listed workflows)
+- `memory`: `true` — enables brain (logs, journal, mantra) + harness lifecycle + tools (remember, track, struggle, recall)
+- `caps`: `{ "maxTurns": 30, "maxCredits": 200, "maxDuration": 300 }`
+- `requireApproval`: `["notify"]` — pause for human approval before these tools
+- `chat`: `true` — make the agent conversational via Slack DMs (auto-enables Agents & AI Apps)
+- `slackName`: optional display name for @mention routing in Slack
+
+**Inbound channels (all off by default, explicitly opt-in):**
+- Chat: `"chat": true` in agent.json + `"defaultAgent"` in slack.json → Slack DMs with Agents & AI Apps, multi-agent routing, suggested prompts
+- Email: `email.json` in agent folder → per-agent email address, deterministic filter, category-specific prompts
+
+**Invoke from workflows:** `const result = await ctx.agent("name", { goal, context? })`
+- `result`: `{ response, output?, usage: { credits, turns, duration }, capped? }`
+- Agents run autonomously (multiple turns with tools), unlike `ctx.ai()` which is single-shot
+- Harness lifecycle: session start loads SOUL.md + mantra + skills; session end prompts for journal + mantra update
+
+### Workspace Structure
+
+```
+agents/           — AI agents (each agent is a folder with agent.json + SOUL.md + skills/)
+connectors/       — data sync from external APIs
+workflows/        — automation logic
+surfaces/         — forms, portals, dashboards (.json)
+files/            — static files synced to R2 (assets, templates, CSVs)
+databases/        — local SQLite files synced to production DOs (.db files gitignored)
+mug.json          — workspace config
+slack.json        — Slack app config
+```
+
+<!-- mug:end -->

@@ -1,0 +1,24 @@
+{
+  "name": "my-workspace",
+  "id": null,
+  "settings": {
+    "timezone": "UTC"
+  },
+  "ai": {
+    "routing": {
+      "fast": "openai/gpt-5.4-nano",
+      "balanced": "@cf/moonshotai/kimi-k2.6",
+      "powerful": "anthropic/claude-sonnet-4-6"
+    },
+    "billing": {
+      "default": "mug-metered",
+      "fast": "mug-metered",
+      "balanced": "mug-metered",
+      "powerful": "mug-metered"
+    }
+  },
+  "sources": {},
+  "dev": {
+    "email": ""
+  }
+}

@@ -1,0 +1,312 @@
+---
+description: Creating Mug forms — collect data from users with field types, conditionals, multi-page, access modes, file uploads, calculated fields, hidden fields, defaults, prefill from auth/URL/DB, locked fields, validation rules with custom error messages, and help text with {{column}} template interpolation
+globs: ["surfaces/**", "workflows/**"]
+---
+
+# Mug Forms
+
+Forms are JSON config files in `surfaces/<name>.json`. They deploy as live web pages. Submissions trigger a handler workflow.
+
+Full API reference (all field types, condition operators, page branching, access modes, edit mode): `.mug/docs/forms.md`
+
+## Creating a Form
+
+**Form config** (`surfaces/<name>.json`):
+```json
+{
+  "type": "form",
+  "title": "Service Request",
+  "description": "Submit a new service request",
+  "submitText": "Submit Request",
+  "workflow": "handle-service-request",
+  "access": { "mode": "public" },
+  "fields": [
+    { "name": "name", "type": "text", "label": "Name", "required": true },
+    { "name": "email", "type": "email", "label": "Email", "required": true },
+    { "name": "message", "type": "textarea", "label": "Message", "rows": 4 }
+  ]
+}
+```
+
+**Handler workflow** (`workflows/handle-<name>.ts`) — processes form data via `ctx.params`:
+```typescript
+workflow("handle-<name>", async (ctx) => {
+  const params = ctx.params as Record<string, string>;
+  const email = params._verified_email ?? params.email;
+  await ctx.notify.email({ to: "owner@example.com", subject: "New submission", message: `From: ${params.name}` });
+  return { processed: true };
+});
+```
+
+Workflows in `workflows/` are auto-discovered by `mug deploy` — no import needed.
+
+## Form Config Fields
+
+- `type` — must be `"form"`
+- `title` — form heading (required)
+- `description` — subtitle below heading
+- `submitText` — submit button label (default: "Submit")
+- `workflow` — handler workflow name (required)
+- `access` — who can access (see Access Modes)
+- `fields` — shorthand for single-page form
+- `pages` — multi-page form (overrides `fields`)
+- `editMode` — load and update existing records
+
+## Submission Data (ctx.params)
+
+- Field values by name: `params.name`, `params.email`
+- `params._verified_email` — present with identify/auth access (email)
+- `params._verified_phone` — present with identify/auth access (phone)
+- `params._auth_row` — full row from auth table (auth access mode only)
+- `params._edit` — `"true"` for edit-mode submissions
+- File fields contain the R2 URL of the uploaded file — use `fetch()` in a workflow to download and process
+- Locked field values are enforced server-side — submitted values are overwritten with the known source
+
+## Field Types
+
+**Text fields** — single-line input:
+```json
+{ "name": "company", "type": "text", "label": "Company Name", "required": true, "placeholder": "Acme Inc." }
+{ "name": "email", "type": "email", "label": "Email Address", "required": true }
+{ "name": "phone", "type": "phone", "label": "Phone", "placeholder": "+1 555 123 4567" }
+```
+Add `pattern` for regex validation: `{ "type": "text", "pattern": "^[A-Z]{2}\\d{4}$" }`
+
+**Number field** — numeric input with constraints:
+```json
+{ "name": "quantity", "type": "number", "label": "Quantity", "min": 1, "max": 100, "step": 1 }
+```
+
+**Select field** — dropdown:
+```json
+{
+  "name": "urgency", "type": "select", "label": "Priority", "required": true,
+  "options": [
+    { "label": "Low", "value": "low" },
+    { "label": "Medium", "value": "medium" },
+    { "label": "High", "value": "high" }
+  ]
+}
+```
+
+**Multiselect field** — checkboxes (submitted as array):
+```json
+{
+  "name": "services", "type": "multiselect", "label": "Services Needed",
+  "options": [
+    { "label": "Cleaning", "value": "cleaning" },
+    { "label": "Repair", "value": "repair" }
+  ]
+}
+```
+
+**Date field** — date picker:
+```json
+{ "name": "preferred_date", "type": "date", "label": "Preferred Date", "min": "2026-01-01", "max": "2026-12-31" }
+```
+
+**Textarea field** — multi-line text:
+```json
+{ "name": "notes", "type": "textarea", "label": "Notes", "rows": 4, "maxLength": 2000 }
+```
+
+**File field** — upload to R2:
+```json
+{ "name": "photo", "type": "file", "label": "Upload Photo", "accept": "image/*", "maxSizeMb": 5 }
+```
+
+**Calculated field** — auto-computed (read-only):
+```json
+{ "name": "total", "type": "calculated", "label": "Total", "expression": "hours * rate", "format": "currency" }
+```
+Formats: `"number"` (default), `"currency"` ($X.XX), `"percent"` (X.X%). Expression supports `+`, `-`, `*`, `/`, `%`.
+
+**Hidden field** — invisible, always submitted:
+```json
+{ "name": "form_version", "type": "hidden", "default": "v2" }
+{ "name": "employee_id", "type": "hidden", "prefill": { "source": "auth", "column": "id" } }
+```
+
+## Default Values
+
+Any field: `"default": "pending"`. Lowest priority in fill chain (prefill > editRecord > URL param > default).
+
+## Prefill
+
+Auto-fill from auth row, URL params, or database:
+```json
+{ "name": "name", "prefill": { "source": "auth", "column": "name" }, "locked": true }
+{ "name": "dept", "prefill": { "source": "url", "param": "department" } }
+{ "name": "manager", "prefill": { "source": "db", "table": "departments", "column": "manager_name",
+    "match": { "column": "id", "param": "dept_id" } }, "locked": true }
+```
+Auth prefill requires `auth` access mode. The runtime fetches the auth row (or runs the `query` if configured). Computed columns from `query` are available as prefill sources.
+
+## Help Text
+
+Display a hint below the field label. Supports `{{column}}` templates resolved from the auth row:
+```json
+{ "name": "hours", "type": "number", "label": "Hours Requested",
+  "helpText": "You have {{available_pto_hours}} hours available" }
+```
+
+## Field Name Uniqueness
+
+**Field names must be unique across the entire form** — including fields on different pages and conditional (`showWhen`) fields. Duplicate names cause silent data loss at submission. `mug form validate` and `mug dev` will error on duplicates.
+
+## Validation Rules
+
+Custom validation with user-facing error messages. Rules: `min`, `max`, `minLength`, `maxLength`, `pattern`. Values support `{{column}}` templates:
+```json
+{ "name": "hours", "type": "number", "label": "Hours Requested", "required": true,
+  "helpText": "You have {{available_pto_hours}} hours available",
+  "validate": [
+    { "rule": "min", "value": 0.5, "message": "Must request at least 30 minutes" },
+    { "rule": "max", "value": "{{available_pto_hours}}", "message": "Cannot exceed your {{available_pto_hours}} available hours" }
+  ]
+}
+```
+Template values that resolve to numbers are auto-coerced for `min`/`max`. Validation runs client-side per-page.
+
+## Locked Fields
+
+`"locked": true` — read-only UI + server-enforced. Submitted value is always the known source:
+```json
+{ "name": "name", "type": "text", "label": "Your Name",
+  "prefill": { "source": "auth", "column": "name" }, "locked": true }
+```
+
+## Conditional Fields
+
+Show/hide fields based on other field values:
+```json
+{
+  "name": "emergency_details", "type": "textarea", "label": "Describe the emergency",
+  "showWhen": [{ "field": "service_type", "op": "eq", "value": "emergency" }]
+}
+```
+
+**Operators:** `eq`, `neq`, `in`, `gt`, `lt`, `filled`, `empty`
+
+Multiple conditions = AND logic. Hidden fields skip validation.
+
+## Multi-Page Forms
+
+```json
+{
+  "type": "form",
+  "title": "Client Onboarding",
+  "workflow": "handle-onboarding",
+  "pages": [
+    {
+      "id": "contact",
+      "title": "Contact Info",
+      "fields": [
+        { "name": "name", "type": "text", "label": "Name", "required": true },
+        { "name": "email", "type": "email", "label": "Email", "required": true }
+      ]
+    },
+    {
+      "id": "details",
+      "title": "Details",
+      "fields": []
+    }
+  ]
+}
+```
+
+Auto-generates back/next buttons, progress bar. Validates per-page.
+
+**Conditional pages:** `"showWhen": [{ "field": "type", "op": "eq", "value": "emergency" }]` on the page object.
+
+**Page branching** — route to different pages based on answers:
+```json
+{
+  "id": "triage",
+  "fields": [],
+  "nextPage": {
+    "conditions": [
+      { "when": [{ "field": "request_type", "op": "eq", "value": "emergency" }], "goto": "urgent" }
+    ],
+    "default": "standard"
+  }
+}
+```
+
+Simple routing: `"nextPage": "details"` (string).
+
+## Access Modes
+
+**Choosing the right mode:**
+- **`public`** — open form (contact us, feedback, public intake)
+- **`identify`** — anyone can access after verifying email (self-service requests)
+- **`auth`** — only users in a database table (internal tools — employee forms, client portals)
+
+**Rule of thumb:** if you have a table of who should access this form, use `auth`.
+
+**Public** — anyone can submit:
+```json
+"access": { "mode": "public" }
+```
+
+**Identify** — anyone can access after verifying email/phone:
+```json
+"access": { "mode": "identify", "method": "email", "sessionDuration": "7d" }
+```
+
+**Auth** — only users in a specific table can access:
+```json
+"access": { "mode": "auth", "method": "email", "table": "employees", "matchColumn": "email", "sessionDuration": "7d" }
+```
+
+**Auth with computed columns** — use `query` to enrich the auth row with JOINs or calculations. The query replaces the default `SELECT *` lookup. Use `:identity` as the placeholder for the authenticated user's email/phone:
+```json
+"access": {
+  "mode": "auth", "method": "email", "table": "employees", "matchColumn": "email",
+  "query": "SELECT e.*, r.hours_per_year - COALESCE(u.used, 0) AS available_pto FROM employees e LEFT JOIN pto_rules r ON r.employee_id = e.id LEFT JOIN (SELECT employee_id, SUM(hours) AS used FROM pto_requests WHERE status != 'denied' GROUP BY employee_id) u ON u.employee_id = e.id WHERE e.email = :identity",
+  "sessionDuration": "7d"
+}
+```
+The computed columns are available in `{{templates}}`, prefill, validation rules, and `_auth_row` in workflows — always fresh, no denormalized state to maintain. `table` and `matchColumn` are still required (used for dev-mode user dropdown).
+
+Session duration format: `30m`, `24h`, `7d`. In dev mode, `auth` shows a user dropdown; `identify` shows freeform input. Both bypass verification.
+
+## Edit Mode
+
+Load existing record, update on submit:
+```json
+"editMode": { "table": "service_requests", "recordParam": "id", "matchColumn": "id" }
+```
+URL: `https://<workspace>.mug.work/<form-id>?id=123`
+
+## Prefill from URL Parameters
+
+Any URL param matching a field name pre-fills it:
+```
+https://<workspace>.mug.work/<form-id>?name=John&email=john@example.com
+```
+
+## Breadcrumbs
+
+When linking to this form from another surface (portal, etc.), add `?from=` and `?fromLabel=` to show a back link:
+```
+/request-form?from=/portal&fromLabel=Back to Portal
+```
+No `?from=` = no breadcrumb. `fromLabel` defaults to "Back".
+
+## CLI Commands
+
+```bash
+mug form init <name>       # scaffold form config + handler workflow
+mug form validate          # check form configs for errors
+mug form list              # show forms and URLs
+mug dev                    # start dev server — forms are live immediately
+mug deploy                 # deploy to production
+```
+
+## Advanced: Dynamic Forms (ctx.collect)
+
+For forms generated programmatically at runtime (fields depend on DB state, per-user forms), use `ctx.collect()` in a workflow. Dynamic forms require running the workflow before the URL works. In local dev, `ctx.collect()` does not persist — use static JSON configs instead.
+
+For displaying submitted data back to users (dashboards, approval inboxes), see the `/portal` skill.
+For custom branding (logo and accent color on forms), add a `branding` section to `mug.json` — see `.mug/docs/forms.md`. Individual forms can override workspace branding with `"branding": { "logoSquare": "files/logo.png", "accentColor": "#hex" }` in the form JSON.

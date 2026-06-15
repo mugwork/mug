@@ -1,0 +1,229 @@
+---
+description: Build a connector for an external API — read-only sync with source() or bidirectional with connector() for outbound actions via ctx.action()
+globs: ["connectors/**", "mug.json"]
+---
+
+# Building Connectors
+
+Build a connector that syncs data from an external API into this workspace's local database. Read-only connectors use `source()`. Bidirectional connectors use `connector()` — they add `get()` and `actions` (create/update/delete) so workflows can write back via `ctx.action()`.
+
+Full API reference (pagination, rate limits, sync, write verbs): `.mug/docs/sources.md`. For `ctx.action()`: `.mug/docs/api.md`.
+
+## Quick path — read-only source
+
+```typescript
+// connectors/<name>.ts
+import { source } from "@mugwork/mug";
+
+source({
+  name: "<name>",
+  database: "<name>",
+  tables: [{
+    name: "<table>",
+    primaryKey: "id",
+    async fetch(ctx) {
+      const token = await ctx.credential();
+      const res = await fetch("https://api.example.com/items", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return (await res.json()).items;
+    },
+  }],
+});
+```
+
+## Quick path — bidirectional connector
+
+```typescript
+// connectors/<name>.ts
+import { connector } from "@mugwork/mug";
+
+connector({
+  name: "<name>",
+  database: "<name>",
+  tables: [{
+    name: "<table>",
+    primaryKey: "id",
+    async fetch(ctx) {
+      const token = await ctx.credential();
+      const res = await fetch("https://api.example.com/items", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return (await res.json()).items;
+    },
+    async get(ctx, recordId) {
+      const token = await ctx.credential();
+      const res = await fetch(`https://api.example.com/items/${recordId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 404) return null;
+      return await res.json();
+    },
+    actions: {
+      async create(ctx, fields) {
+        const token = await ctx.credential();
+        const res = await fetch("https://api.example.com/items", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify(fields),
+        });
+        return await res.json();
+      },
+      async update(ctx, recordId, fields) {
+        const token = await ctx.credential();
+        const res = await fetch(`https://api.example.com/items/${recordId}`, {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify(fields),
+        });
+        return await res.json();
+      },
+      async delete(ctx, recordId) {
+        const token = await ctx.credential();
+        const res = await fetch(`https://api.example.com/items/${recordId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        return await res.json();
+      },
+    },
+  }],
+});
+```
+
+Connectors in `connectors/` are auto-discovered by `mug deploy` — no import needed. Store credentials with `mug secret set`, sync with `curl -X POST http://localhost:8787/sync/<name>`.
+
+## Full pipeline: search catalog → discover → gather → verify → scaffold
+
+### 0. Check the community catalog
+
+Before researching from scratch, check `mug connector search "<product>"`. If a verified connector exists, clone it with `mug connector clone --slug <name>` — this downloads the spec and scaffolds a ready-to-use connector file. Skip to step 4 (credentials). Still run verify against your own API credentials.
+
+### 1. Research the API
+
+Search for the product's API docs, developer portal, OpenAPI spec, and Zapier/Make/n8n integrations. Determine:
+- Has API (yes/no), API type (rest/graphql/etc.)
+- Docs URL, spec URL
+- Auth method (bearer, api-key, oauth2, basic)
+- Tier: 1 = has OpenAPI spec, 2 = has docs but no spec, 3 = no docs
+
+### 2. Discover
+
+```bash
+mug connector discover "<product>" \
+  --tier <1|2|3> \
+  --has-api \
+  --api-type <type> \
+  --docs-url "<url>" \
+  --spec-url "<url>" \
+  --auth-type <type> \
+  [--zapier] [--make] [--n8n]
+```
+
+Omit flags you don't have data for. Use `--no-api` if no API exists (pipeline stops).
+
+### 3. Gather
+
+- **Tier 1 (has spec URL):** `mug connector gather --slug <name> --from-spec "<spec-url>"`
+- **Tier 2 (has docs, no spec):** Write an OpenAPI 3.x spec from docs, then `mug connector gather --slug <name> --from-file <your-spec-file>`
+- **Tier 3 (no docs):** Ask user for HAR file, then `mug connector gather --slug <name> --from-har <file>`
+
+Check the output — it reports endpoint count and quality score.
+
+### 4. Credentials
+
+**Ask the user for API credentials.** Never guess or skip this step.
+
+```bash
+mug secret set <SLUG>_API_KEY=<the credential>
+```
+
+Add source config to `mug.json`:
+```json
+"sources": {
+  "<slug>": {
+    "auth": {
+      "type": "<bearer|api-key|basic|oauth2>",
+      "value": "<the credential>"
+    },
+    "baseUrl": "<API base URL>",
+    "syncs": {}
+  }
+}
+```
+
+For `api-key` auth, also include `"header": "<header-name>"` in the auth object.
+
+Credentials in `mug.json` are for local dev. For production, `mug deploy` sends secrets from `.mug/secrets` automatically.
+
+### 5. Verify (DO NOT SKIP)
+
+```bash
+mug connector verify --slug <name> --source <name>
+```
+
+Runs 7 probes against the live API, enriches spec with `x-mug-*` annotations for pagination, rate limits, and sync config. Without this step, the generated source won't have these features.
+
+If auth fails, fix the source config and re-run. If endpoints are unreachable, check the base URL.
+
+### 6. Scaffold
+
+```bash
+mug connector scaffold --slug <name>
+```
+
+Generates `connectors/<slug>.ts` using the enriched spec.
+
+### 7. Review the generated source
+
+Connectors in `connectors/` are auto-discovered by `mug deploy` — no import needed.
+
+Review the generated source for:
+- Correct base URL and auth credential name
+- Sensible table names and primary keys
+- Appropriate pagination config
+- Endpoints that should be excluded
+
+The generated code is a starting point — customize table definitions, add filtering, rename tables, or adjust the `extractItems` function.
+
+### 8. Sync and verify data
+
+```bash
+mug dev                                                    # start dev server
+curl -s -X POST http://localhost:8787/sync/<slug>           # trigger first sync
+mug query <slug> "SELECT name FROM sqlite_master WHERE type='table'"  # check tables
+mug query <slug> "SELECT count(*) FROM <first-table>"      # check row count
+```
+
+If count is 0, check the source's `fetch` function and the sync response for errors.
+
+### 9. Show the data
+
+```bash
+mug query <slug> "SELECT * FROM <table> LIMIT 5"
+```
+
+If multiple related tables exist, demonstrate a cross-table JOIN:
+```bash
+mug query <slug> "SELECT a.name, b.name FROM <table_a> a JOIN <table_b> b ON a.<fk> = b.id"
+```
+
+### 10. Sync schedule (optional)
+
+Add syncs to the source in `mug.json` for automatic syncing:
+```json
+"sources": {
+  "<slug>": {
+    "auth": { ... },
+    "baseUrl": "...",
+    "syncs": {
+      "<slug>": {
+        "database": "<slug>",
+        "schedule": "*/15 * * * *"
+      }
+    }
+  }
+}
+```
+
+Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily).

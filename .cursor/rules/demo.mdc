@@ -1,0 +1,107 @@
+---
+description: Share deployed surfaces with stakeholders — pre-authenticated links, notification routing, workflow control. Covers mug demo enable/disable/status and ctx.isDemo.
+globs: ["surfaces/**", "workflows/**"]
+---
+
+# Demo Mode
+
+Share deployed auth'd surfaces with stakeholders without requiring them to verify. Demo mode creates pre-authenticated links with configurable notification routing and optional workflow suppression.
+
+For full API reference, see `.mug/docs/demo.md`.
+
+## Enable demo mode
+
+```bash
+# Basic: demo as a specific identity
+mug demo enable <surface> --as demo@example.com
+
+# With notification routing
+mug demo enable <surface> --as demo@example.com --notify dev
+mug demo enable <surface> --as demo@example.com --sms-to +15551234567
+
+# Suppress workflows (show form UI only)
+mug demo enable <surface> --as demo@example.com --no-workflows
+
+# Custom expiry (default 7d)
+mug demo enable <surface> --as demo@example.com --expires 30d
+```
+
+## Notification modes
+
+| Mode | Behavior |
+|------|----------|
+| `demo-user` (default) | Redirect to `--as` identity. Email→email identity, SMS→phone identity. Non-matching channels suppressed. |
+| `dev` | Redirect to developer's account email. SMS/Slack suppressed unless overridden. |
+| `off` | Suppress all. Logged in `mug logs` but not sent. |
+
+## Per-channel overrides
+
+Override any mode for specific channels:
+- `--email-to <address>` — redirect email to this address
+- `--sms-to <phone>` — redirect SMS to this number
+- `--slack-to <channel>` — redirect Slack to this channel/user
+
+Overrides take precedence over the mode. Combine with any `--notify` value.
+
+## Workflow suppression
+
+`--no-workflows` prevents any workflow from firing on surface submissions. The surface still renders and accepts input but nothing executes server-side.
+
+## ctx.isDemo
+
+`true` in workflows triggered from demo surfaces. Notifications are already handled by demo config — use `ctx.isDemo` only for non-notification side effects:
+
+```typescript
+workflow("handle-request", async (ctx) => {
+  // Notifications auto-routed — no guard needed
+  await ctx.notify.email({ to: params.manager_email, message: "New request" });
+
+  // Guard destructive writes
+  if (ctx.isDemo) return;
+  await ctx.exec("ops", "UPDATE requests SET status = 'submitted' WHERE id = ?", [params.id]);
+});
+```
+
+## Suppressed notification logging
+
+Suppressed notifications appear in `mug logs` step output:
+```
+notify-email-1: suppressed (demo mode: demo-user)
+```
+
+## Home screen demo
+
+The workspace home screen (`subdomain.mug.work/`) **requires authentication** — it is not public. Use `_home` as the surface ID:
+
+```bash
+mug demo enable _home --as demo@example.com
+mug demo disable _home
+```
+
+Demo mode on `_home` must be set **separately** from individual surfaces. Enabling demo on a surface does not make the home screen accessible.
+
+## Managing demos
+
+```bash
+mug demo status              # list all active demos
+mug demo disable <surface>   # immediately revoke
+```
+
+Demos auto-expire based on `--expires` (default 7 days).
+
+## Complete Example
+
+```bash
+# Create a demo persona in auth table
+mug sql main "INSERT INTO employees (email, name, role) VALUES ('demo@example.com', 'Demo User', 'Technician')"
+
+# Enable demo on home screen and surface
+mug demo enable _home --as demo@example.com --notify dev
+mug demo enable employee-portal --as demo@example.com --notify dev --sms-to +15551234567
+
+# Share the root URL: https://my-workspace.mug.work/
+
+# When done, disable both
+mug demo disable _home
+mug demo disable employee-portal
+```

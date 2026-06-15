@@ -1,0 +1,7 @@
+node_modules/
+databases/*.db
+.mug/*
+!.mug/docs/
+.wrangler/
+.dev.vars
+wrangler.toml

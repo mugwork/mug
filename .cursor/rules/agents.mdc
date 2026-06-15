@@ -1,0 +1,77 @@
+---
+description: Build a custom AI agent — autonomous multi-step work with tools, brain memory, skills, and structured output.
+globs: agents/**
+---
+
+# Custom Agents
+
+Each agent is a folder in `agents/<name>/` with:
+- `agent.json` — config (model, tools, caps, memory, requireApproval)
+- `SOUL.md` — core identity, role, and primary instructions (always loaded)
+- `skills/` — agent-specific skills (auto-discovered, loaded on demand)
+- `BRAIN.db` — persistent memory (created on first deploy, managed by runtime)
+
+Shared skills: `agents/shared-skills/<skill-name>/SKILL.md`
+
+## agent.json
+
+```json
+{
+  "name": "invoice-analyzer",
+  "model": "claude-sonnet",
+  "tools": ["query", "search", "notify"],
+  "memory": true,
+  "caps": { "maxTurns": 30, "maxCredits": 200, "maxDuration": 300 },
+  "requireApproval": ["notify"]
+}
+```
+
+Model can be a fixed string or dynamic routing:
+```json
+{ "model": { "fast": "claude-haiku", "balanced": "claude-sonnet", "powerful": "claude-opus" } }
+```
+
+## Invoke from workflow
+
+```typescript
+const result = await ctx.agent("invoice-analyzer", {
+  goal: "Analyze overdue invoices and notify the team",
+  context: { threshold: 30 },
+  caps: { maxTurns: 10 },
+});
+// result: { response, output?, usage: { credits, turns, duration }, capped?, cappedReason? }
+```
+
+## Tool grants
+
+- `query` — read-only SQL against workspace databases
+- `search` — semantic similarity search against synced data
+- `ask` — natural language Q&A against databases (search + AI synthesis)
+- `notify` — send email (`send_email`) and SMS (`send_sms`)
+- `http` — fetch external APIs (`http_request`)
+- `workspace` — read/write workspace files
+- `ai` — sub-AI calls for classify/extract/summarize (credits count against caps)
+- `trigger_workflow` — trigger other workflows (requires `workflows` allowlist in agent.json)
+- `custom:<name>` — custom tools defined in SOUL.md
+
+## Brain memory
+
+When memory is configured, the agent gets 4 tools automatically:
+- `remember(content, entity?)` — store facts, upsert entities
+- `recall(query)` — search memory for entities, facts, struggles
+- `log_outcome(action, result, effective?)` — track action effectiveness
+- `flag_struggle(category, description)` — signal knowledge gaps or edge cases
+
+Auto-detected struggles (no agent action needed): cap hits, approval rejections, fallback responses.
+
+Session-start digest: entity summaries, recent facts, unresolved struggles, effectiveness stats.
+
+Admin reviews brain via `mug brain <agent-name> struggles`.
+
+## Approval flow
+
+When `requireApproval` lists tool names, agent pauses before calling them. Result includes `status: "pending_approval"` and `pendingApproval: { tool, args }`. Resume by re-invoking with the same `sessionKey`.
+
+## Cap enforcement
+
+When caps are hit, the agent is forced to call `deliver_output` with partial results. `result.capped` is `true` and `result.cappedReason` explains why.

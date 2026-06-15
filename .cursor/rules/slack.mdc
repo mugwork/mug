@@ -1,0 +1,131 @@
+---
+description: Build Slack integrations — configure slack.json, send Block Kit messages, slash commands, interactive buttons, Home Tab, shortcuts, AI agent DMs. Use when adding Slack to a workspace.
+globs: ["workflows/**", "slack.json", "agents/*/agent.json"]
+alwaysApply: false
+---
+
+# Slack Surface
+
+## Quick Reference
+
+- `slack.json` at workspace root configures the Slack app (always present, `{"enabled": false}` by default)
+- `ctx.notify.slack({ to, message, blocks?, thread_ts? })` — send messages
+- `ctx.slack.updateMessage({ channel, ts, text?, blocks? })` — update messages after actions
+- `ctx.slack.openModal({ triggerId, view })` — open modals from slash commands
+- Action ID convention: `mug:<workflow>:<action>` routes button clicks to workflows
+- `ctx.waitForUrl("event")` — generates callback URLs for approval buttons
+
+## slack.json Configuration
+
+```json
+{
+  "enabled": true,
+  "name": "Acme Dispatch",
+  "description": "Job dispatch and approval",
+  "color": "#1a1a2e",
+  "botName": "acme-ops",
+  "homeTab": {
+    "enabled": true,
+    "sections": [
+      { "type": "text", "title": "Dashboard", "text": "Real-time overview." },
+      { "type": "query", "title": "Active Jobs", "database": "jobs", "query": "SELECT title, status FROM jobs WHERE status = 'active'", "columns": ["title", "status"] },
+      { "type": "actions", "buttons": [{ "text": "Run Report", "workflow": "daily-report", "style": "primary" }] },
+      { "type": "divider" }
+    ]
+  },
+  "messagesTab": true,
+  "shortcuts": [
+    { "name": "Create Dispatch", "callbackId": "create_dispatch", "description": "Create a new job", "type": "global", "workflow": "create-dispatch" }
+  ],
+  "unfurlDomains": ["acme.mug.work"]
+}
+```
+
+Scopes auto-inferred. Always: `chat:write`, `channels:join`, `channels:read`, `groups:read`, `users:read`, `users:read.email`, `im:write`, `mpim:read`, `mpim:write`, `reactions:write`, `files:write`. Shortcuts add `commands`, chat agents add `assistant:write`.
+
+## Workflow Triggers (in .ts files, not slack.json)
+
+```typescript
+import { workflow } from "@mugwork/mug";
+
+workflow("handle-dispatch", async (ctx) => {
+  await ctx.slack.openModal({ triggerId: ctx.params.triggerId, view: { ... } });
+}, {
+  trigger: { type: "slack_command", command: "/dispatch", description: "Create a dispatch" },
+});
+```
+
+## Key Patterns
+
+`ctx.notify.slack({ to })` — `to` accepts `#channel-name`, `channel-name`, or channel ID. Names resolve automatically. Bot auto-joins public channels; private channels need manual invite via Integrations tab.
+
+**Send Block Kit message with action buttons:**
+```typescript
+await ctx.notify.slack({
+  to: channelId,
+  message: "Fallback text",
+  blocks: [
+    { type: "section", text: { type: "mrkdwn", text: "*Title*\nDetails here" } },
+    { type: "actions", elements: [
+      { type: "button", text: { type: "plain_text", text: "Approve" }, action_id: "mug:handler:approve", value: id, style: "primary" },
+    ] },
+  ],
+});
+```
+
+**Handle button click (in the routed workflow):**
+```typescript
+// ctx.params.actionId = "approve", ctx.params.actionValue = id
+await ctx.slack.updateMessage({
+  channel: ctx.params.channelId,
+  ts: ctx.params.messageTs,
+  text: "Done",
+});
+```
+
+**Home Tab sections:** query (run SQL → table), actions (buttons → workflows), text (header + markdown), divider.
+
+**Slack data (auto-synced):** `slack_users` (user_id, email, display_name), `slack_channels` (channel_id, name)
+
+## App Setup
+
+Run `mug slack setup` to create the Slack app and store credentials. Interactive — two paths:
+
+- **Developer is admin in target workspace:** CLI opens config token page → auto-creates app via Manifest API → all credentials stored. Print install URL.
+- **Developer is NOT admin:** CLI generates manifest URL + instructions for client admin. Run `mug slack setup` again to enter credentials as they come in.
+
+Both paths store config token for auto-update on future `mug deploy`. Setup detects existing state — only asks for missing pieces.
+
+After setup: `mug deploy` (push manifest) → share install URL → bot token auto-stored on OAuth callback.
+
+## AI Agent DMs (Agents & AI Apps)
+
+Set `"chat": true` in `agent.json` + `"defaultAgent"` in `slack.json` → threaded AI conversations via Slack's Agents & AI Apps.
+
+```json
+// slack.json
+{
+  "enabled": true,
+  "name": "Acme Ops",
+  "defaultAgent": "ops-bot",
+  "suggestedPrompts": [
+    { "title": "Ask Ops Bot", "agent": "ops-bot" },
+    { "title": "Check Schedule", "message": "What's on the schedule today?" }
+  ],
+  "appIcon": "assets/slack-icon.png"  // reference only — upload manually via Slack UI
+}
+```
+
+```json
+// agents/ops-bot/agent.json
+{
+  "model": "openai/gpt-4.1-nano",
+  "tools": ["query"],
+  "chat": true,
+  "slackName": "ops-bot"
+}
+```
+
+**Multi-agent routing:** suggested prompt clicks pin thread to agent. @mentions route by `slackName`. Thread stays pinned to one agent.
+
+**After first deploy with chat agents:** enable "Agents & AI Apps" toggle and set suggested prompts to "Dynamic" at `https://api.slack.com/apps/<app_id>/app-assistant`. `mug deploy` prints the link.

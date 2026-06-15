@@ -1,0 +1,165 @@
+---
+description: Creating Mug workflows — multi-step automation with data queries, AI classification, notifications, and forms
+globs: ["workflows/**"]
+---
+
+# Mug Workflows
+
+Build multi-step workflows that query data, apply AI logic, and take action.
+
+Full API reference (all ctx methods, WorkflowResult, ops database schema, production execution): `.mug/docs/workflows.md`
+
+## Creating a workflow
+
+1. Create `workflows/<name>.ts`
+2. Import `workflow` from `"@mugwork/mug"`
+3. Register with `workflow("<name>", async (ctx) => { ... })`
+
+Workflows in `workflows/` are auto-discovered by `mug deploy` — no import needed.
+
+```typescript
+import { workflow } from "@mugwork/mug";
+
+workflow("<name>", async (ctx) => {
+  // Fetch all open items from the database
+  const rows = await ctx.query("<database>", "SELECT ...");
+
+  // Classify each item using AI with smart routing
+  for (const row of rows) {
+    const result = await ctx.ai("fast", {
+      prompt: `<classification prompt using ${row.field}>`,
+      system: "Reply with exactly one word.",
+      maxTokens: 10,
+    });
+  }
+
+  // Notify the manager about the results
+  await ctx.notify.email({
+    to: "manager@company.com",
+    subject: "New request",
+    message: "A new request was submitted.",
+    cta: { label: "Review", url: ctx.surfaceUrl("approvals") },
+  });
+
+  // Return a summary of what happened
+  return { summary: "..." };
+}, { description: "<Plain English description of what this workflow does>" });
+```
+
+## Descriptions
+
+Every workflow must have a `description` in the options object — a plain English sentence explaining what the workflow does and why.
+
+Every `ctx.*` call and `return` statement must have a `//` comment on the line above describing what it does. These comments appear in the workspace explorer as human-readable step descriptions.
+
+```typescript
+// Check for overdue invoices in QuickBooks
+const overdue = await ctx.query("quickbooks", "SELECT * FROM invoices WHERE ...");
+
+// Send a reminder SMS to the customer
+await ctx.notify.sms({ to: inv.phone, message: "..." });
+
+// No overdue invoices found, nothing to do
+return { skipped: true };
+```
+
+## ctx API
+
+- `ctx.query(database, sql, params?)` — read rows, returns `Record<string, unknown>[]`
+- `ctx.exec(database, sql, params?)` — write/update, returns number of changes
+- `ctx.ai(model, { prompt, system, maxTokens?, routing?, billing? })` — returns `{ text, model, usage, routing? }`
+  - Use tier names: `"fast"` (cheap), `"balanced"` (mid), `"powerful"` (best). See `/ai` skill for multi-provider and BYOK.
+- `ctx.notify.email({ to, message, subject?, fromName?, cta? })` — styled email with optional CTA button. See `/notify` skill.
+- `ctx.notify.sms({ to, message })` — send SMS
+- `ctx.notify.slack({ to, message })` — send Slack message
+- `ctx.surfaceUrl(surfaceId, path?)` — generate URL to a surface (dev/prod-aware). Use in notification CTAs.
+- `ctx.file(path)` — read a file from `files/` as ArrayBuffer (local in dev, R2 in production)
+- `ctx.fileText(path)` — read a file as UTF-8 string (templates, CSV data, JSON configs)
+- `ctx.collect(options)` — create a form that collects data from users, returns the form URL. See `/form` skill for full schema: field types, conditionals, pages, access modes.
+- `ctx.secret(name)` — read a workspace secret by name (from `.mug/secrets`). Throws if not found. For external API keys and tokens not tied to a source.
+- `ctx.waitFor(eventName, { timeout?, message? })` — pause until external event. Returns `{ payload, type, timedOut }`.
+- `ctx.waitForUrl(eventName)` — one-time callback URL for embedding in notifications.
+- `ctx.http(url, options?)` — outbound HTTP. Returns `{ status, headers, body, json, ok }`. Throws on non-2xx. Options: `{ method?, headers?, body?, throwOnError?, retry?, timeout?, sign?: { secret, header? } }`.
+- `ctx.respond(body, status?)` — custom webhook response. First call wins. For Slack challenge, Twilio TwiML.
+- `ctx.agent(name, { goal, context?, sessionKey?, caps? })` — invoke a custom AI agent. See `/agents` skill.
+- `ctx.action(connectorName)` — outbound operations against external APIs. Returns a handle with `.read(table, id)`, `.create(table, fields)`, `.update(table, id, fields)`, `.delete(table, id)`, `.upsert(table, id, fields)`. Transforms auto-snapshot before writing. Default max 100 ops per run (`maxOperations` option). See `.mug/docs/api.md`.
+- `ctx.rollback(actionId)` — undo a prior action using stored before-snapshot. `ctx.rollbackRun(runId)` rolls back all actions from a run in reverse order.
+- `ctx.search(query, { source?, limit? })` — semantic search across synced data. Returns ranked `{ score, table, primaryKey, row }[]`. Requires deployed workspace.
+- `ctx.ask(question, { source?, limit?, model?, system? })` — full RAG: searches data + LLM answer. Returns `{ answer, sources, usage }`. Requires deployed workspace.
+
+Drop files in `files/` and run `mug push` to upload. Check `files/.remote` for remote files.
+
+Every ctx call is auto-logged with timing, input/output, and token usage.
+
+## Pause for external events (waitFor)
+
+Pause a workflow until an external event arrives (approval click, payment webhook, reply). Zero cost while waiting.
+
+```typescript
+const callbackUrl = await ctx.waitForUrl("approval");
+await ctx.notify.email({ to: mgr, message: "Approve?", cta: { label: "Approve", url: `${callbackUrl}?action=approve` } });
+const event = await ctx.waitFor<{ action: string }>("approval", { timeout: "48 hours" });
+if (event.timedOut) { /* handle timeout */ }
+```
+
+- `ctx.waitForUrl(eventName)` — one-time callback URL (7-day expiry)
+- `ctx.waitFor(eventName, { timeout?, message? })` — pauses until event or timeout. Returns `{ payload, type, timedOut }`
+- In local dev, waitFor resolves immediately with empty payload
+
+## Inbound message routing
+
+Receive SMS replies, emails, and Slack interactions. Set `inbound` in the workflow options:
+
+```typescript
+workflow("handle-sms", async (ctx) => {
+  const { from, body } = ctx.params as { from: string; body: string };
+  // process inbound SMS...
+}, { inbound: "sms" });
+```
+
+Inbound params by channel:
+- **SMS**: `{ from: "+1...", body: "reply text" }`
+- **Email**: `{ from: "user@example.com", subject: "Re: ...", body: "reply text" }`
+- **Slack**: `{ userId: "U...", actionId: "approve_btn", actionValue: "yes" }`
+
+**Send-and-wait pattern**: Workflow 1 sends notification + sets status field in DB. Workflow 2 (inbound handler) catches the reply and checks the status field to determine what to do.
+
+## Testing
+
+```bash
+mug dev          # start dev server
+mug run <name>   # execute workflow
+mug logs <name>  # view step-by-step execution log (dev or production)
+mug logs <name> --production  # force production logs
+```
+
+Common issues:
+- Table doesn't exist → add `ctx.exec()` to create it, or sync the source first
+- AI prompt returns unexpected format → adjust the prompt or add parsing
+
+## Scheduling
+
+Add `schedule` to workflow options. Cron string for simple, object for complex:
+
+```typescript
+workflow("daily-sync", handler, { schedule: "0 9 * * 1-5" });
+workflow("board-prep", handler, {
+  schedule: { weekday: "tuesday", nth: 3, time: "09:00", skipHolidays: true },
+});
+```
+
+Common cron: `"*/15 * * * *"` (15min), `"0 9 * * 1-5"` (weekdays 9am), `"0 0 * * *"` (daily midnight).
+
+ScheduleConfig fields: `weekday`, `nth` (1-5 or -1=last), `time` ("HH:MM"), `interval` ("15m"/"1h"), `between` (["14:00","16:00"]), `skipHolidays` (true/"US"), `skipDates` (["YYYY-MM-DD"]), `cron`, `timezone`.
+
+Holiday calendar in mug.json: `{ "holidays": { "country": "US", "include": ["christmas-eve", "black-friday", "easter-monday"], "exclude": ["columbus-day-indigenous-peoples-day"] } }`
+
+## Deploy
+
+```bash
+mug deploy                           # bundle and deploy
+mug run <name> --production          # trigger in production (CF Workflows)
+mug status <name> <instanceId>       # check production status
+```
+
+For collecting data from users, see the `/form` skill. For data display and approval UIs, see the `/portal` skill. For email/SMS notifications with CTA buttons and surface links, see the `/notify` skill.

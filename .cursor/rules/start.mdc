@@ -1,0 +1,37 @@
+---
+description: Get started with Mug — guided orientation for new workspaces, progress checklist for existing ones
+globs: ["mug.json"]
+---
+
+# Start
+
+Guided onboarding and "what's next?" for Mug workspaces.
+
+## Detect what's built
+
+Scan the workspace for the 5 primary components:
+- **Connectors**: `.ts` files in `connectors/`
+- **Workflows**: `.ts` files in `workflows/`
+- **AI Agents**: folders in `agents/` with `agent.json`
+- **Surfaces**: `.json` files in `surfaces/`
+- **Slack App**: `slack.json` with `"enabled": true`
+
+## New workspace (nothing built)
+
+Print orientation:
+
+**What Mug is**: AI automation platform for building deployed agents, real code workflows, and headless web surfaces for everyday businesses — integrated with any API, accessed via email, SMS, and Slack. Built locally using Claude Code, Codex, or Cursor.
+
+**5 primary components**: Connectors (sync data), Workflows (automation), AI Agents (reasoning), Surfaces (web UIs), Slack App (chat interface).
+
+**Recommend starting with a connector** — real data first, then everything else has something to work with. Ask what API the client uses, hand off to `/connector`.
+
+## Existing workspace (has components)
+
+Show progress checklist (✓/○ per component), then recommend next based on dependency chain:
+
+1. Connector → 2. Workflow → 3. AI Agent → 4. Surface → 5. Slack App
+
+Slack only recommended after agents or workflows exist. Let user choose any component.
+
+Hand off to: `/connector`, `/workflow`, `/agents`, `/form`, `/portal`, `/slack`

@@ -1,0 +1,17 @@
+{
+  "name": "my-workspace",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "mug dev",
+    "deploy": "mug deploy"
+  },
+  "dependencies": {
+    "@mugwork/mug": "latest",
+    "hono": "^4.12.18"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260402.1",
+    "typescript": "^6.0.2"
+  }
+}

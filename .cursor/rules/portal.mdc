@@ -1,0 +1,161 @@
+---
+description: Creating Mug portals — tabbed, section-based surfaces that query workspace data. Section types: table (list+detail+actions), stats, progress, text, chart, gallery, accordion. Used for dashboards, employee portals, approval inboxes.
+globs: ["surfaces/**"]
+---
+
+# Mug Portals
+
+Portals are config-driven JSON files in `surfaces/` that render as tabbed pages with typed sections.
+
+Full API reference: `.mug/docs/portals.md`
+
+## Config structure
+
+```json
+{
+  "type": "portal",
+  "title": "Employee Portal",
+  "access": { "mode": "auth", "method": "email", "table": "employees", "matchColumn": "email", "sessionDuration": "7d" },
+  "sections": [
+    { "type": "stats", "query": "...", "items": [{ "label": "Pending", "column": "pending", "color": "#f59e0b", "href": "?tab=pending" }] }
+  ],
+  "tabs": [
+    {
+      "id": "main",
+      "label": "Dashboard",
+      "color": "#3b82f6",
+      "countQuery": "SELECT count(*) FROM items WHERE owner = :user",
+      "sections": [
+        { "type": "table", "query": "...", "columns": [...], "detail": {...} }
+      ],
+      "links": [{ "label": "Submit", "href": "/form?from=/portal&fromLabel=Back to Portal" }]
+    }
+  ]
+}
+```
+
+- **Top-level `sections`**: rendered above tab bar, visible on all tabs. Use for summary stats or announcements.
+- **Tab `color`**: sets tab text + underline color. Use for status-meaning tabs (amber=pending, green=approved).
+- **Tab `countQuery`**: shows dynamic count badge — `"Pending (3)"`. Query returns one row, one number.
+
+Single-tab portals: tab bar hidden. Multi-tab: `?tab=<id>` switches tabs (SSR, full reload).
+
+## Section types
+
+**table** — paginated rows → detail pages → action buttons:
+```json
+{ "type": "table", "query": "SELECT ...", "columns": [...], "detail": { "title": "{{col}}", "fields": [...] }, "actions": [...], "pageSize": 25, "primaryKey": "id" }
+```
+
+**stats** — metric cards from single-row query. `color` sets border; `valueColor` controls number color (`"match"` = inherit border, `"neutral"` = dark text, hex = explicit). `href` makes the card clickable (use `"?tab=id"` for tab nav). When `color` is set, `valueColor` defaults to `"match"`:
+```json
+{ "type": "stats", "query": "SELECT count(*) as n FROM t", "items": [{ "label": "Total", "column": "n", "valueColor": "neutral" }, { "label": "Pending", "column": "p", "color": "#f59e0b", "href": "?tab=pending" }] }
+```
+
+**progress** — progress bars, one per row. Optional `colorThresholds` for automatic coloring by percentage, or `colorColumn` to read color from query:
+```json
+{ "type": "progress", "query": "SELECT type, used, max FROM balances WHERE email = :user", "labelColumn": "type", "valueColumn": "used", "maxColumn": "max", "subtitleTemplate": "{{remaining}} left", "colorThresholds": [{"percent":50,"color":"#10b981"},{"percent":80,"color":"#f59e0b"},{"percent":100,"color":"#ef4444"}] }
+```
+
+**text** — static markdown (# headings, **bold**, *italic*, - lists):
+```json
+{ "type": "text", "content": "## Announcements\nWelcome back." }
+```
+
+**chart** — inline SVG bar or donut. `labelColumn`/`valueColumn` default to `"label"`/`"value"`. `colors` maps label values to hex:
+```json
+{ "type": "chart", "query": "SELECT status as label, count(*) as value FROM runs GROUP BY status", "chartType": "donut", "title": "Status", "colors": { "complete": "#16a34a", "error": "#ef4444" } }
+```
+
+**gallery** — image card grid:
+```json
+{ "type": "gallery", "query": "SELECT photo, name FROM team", "imageColumn": "photo", "titleColumn": "name", "columns": 3 }
+```
+
+**accordion** — collapsible container wrapping child sections:
+```json
+{ "type": "accordion", "label": "History", "open": false, "sections": [...] }
+```
+
+## Column/field formats
+
+`"date"`, `"datetime"`, `"currency"` ($X,XXX.XX), `"currency-whole"` ($X,XXX — no cents), `"currency-short"` ($12.5K/$1.2M), `"number"` (comma-separated), `"percent"` (XX%), `"multiline"` (fields only). Add `"dateFormat": "short"` for compact dates. Stats default to whole dollars for `currency`; values that overflow auto-abbreviate to K/M. `"badge": true` for colored status badges (green=approved/active, yellow=pending, red=denied, gray=cancelled). `"badgeColors": { "PTO": "#3b82f6" }` for custom non-status values — checked first, then built-in fallback.
+
+## `:user` and `:auth.column` parameters
+
+`:user` in SQL = verified session email/phone. Only use with `identify` or `auth` mode. In `public` mode, resolves to empty string.
+
+`:auth.column` in SQL = any column from the user's auth table row. Requires `auth` access mode. Example: `WHERE department = :auth.department` filters by the user's department. All column names from the auth table work: `:auth.id`, `:auth.name`, `:auth.role`, etc.
+
+## Action buttons
+
+On table detail pages. Trigger workflows with `{ action, ...rowData, _verified_email, _surface, _workspace }`.
+
+Styles: `"success"` (green), `"danger"` (red), `"warning"` (amber), `"primary"` (accent), `"default"` (gray). Add `"color": "#hex"` for custom override with working hover. Use `"success"`/`"danger"` for approve/deny — avoids both buttons inheriting accentColor.
+
+```json
+{
+  "name": "approve", "label": "Approve", "workflow": "handle-approval", "style": "success",
+  "showWhen": { "field": "status", "op": "eq", "value": "pending" },
+  "afterMessage": "Approved on {{timestamp}}", "afterColor": "#16a34a",
+  "afterActions": [{ "label": "Revoke", "action": "revoke", "style": "danger" }]
+}
+```
+
+Actions are **optimistic** — button replaced immediately with status message. On backend error, original buttons restore.
+- `afterMessage` — custom status text. `{{timestamp}}` = local date/time. Default: "✓ {label} · {timestamp}".
+- `afterColor` — color for the status message text (hex). Default: accent color. Match to action meaning: `"#16a34a"` for approve, `"#dc2626"` for deny.
+- `afterActions` — follow-up buttons rendered after action fires. Each has `label`, `action`, optional `style`. Fires same workflow. Omit for no follow-up.
+- `confirm` — confirmation dialog before firing.
+
+## Timeline playback
+
+Action buttons can trigger scripted visual sequences instead of workflows — set `"timeline"` (array) instead of `"workflow"` (string). Purely client-side, no server round-trips. Great for client demos and presentations.
+
+```json
+{
+  "name": "send-reminder", "label": "Send Reminder", "style": "primary",
+  "timeline": [
+    { "delay": 1, "event": "toast", "message": "AI drafting reminder..." },
+    { "delay": 3, "event": "preview", "channel": "email", "to": "Mr. Davis", "body": "Hi Mr. Davis..." },
+    { "delay": 5, "event": "toast", "message": "Email sent" },
+    { "delay": 7, "event": "update", "row": "inv-001", "field": "status", "value": "reminded" }
+  ]
+}
+```
+
+Event types: `toast` (popup, auto-dismiss 4s), `preview` (email/SMS card), `stream` (char-by-char text into `target` selector), `update` (swap cell by `row`+`field`), `highlight` (pulse-highlight a row via `row` or button via `action`, with optional `message` badge). `delay` = seconds from trigger.
+
+**Autoplay**: `"autoplay": [...]` on the portal config fires events on page load. Use for guided demos (`highlight` with `delay: 0`) or AI summary streams on dashboards.
+
+## Per-surface branding
+
+Add `"branding": { "logoSquare": "files/logo.png", "accentColor": "#hex" }` to override workspace branding for this portal. Surface values take precedence; workspace branding from `mug.json` is the fallback.
+
+## Embed mode
+
+Append `?embed=true` to any surface URL to strip header chrome (logo, session, logout, breadcrumbs) for iframe embedding. CSP allows framing from `mug.work` and `*.mug.work`.
+
+## Breadcrumbs
+
+When portal links point to other surfaces, add `?from=` and `?fromLabel=` to the href so the target shows a back link:
+```json
+{ "label": "Submit", "href": "/form?from=/portal&fromLabel=Back to Portal" }
+```
+No `?from=` = no breadcrumb. Works on both form and portal surfaces.
+
+## Access modes
+
+- `"public"` — anyone
+- `"identify"` — verify email, anyone can access
+- `"auth"` — must exist in database table
+
+## CLI
+
+```bash
+mug portal init <name>       # scaffold in surfaces/
+mug portal list              # list portals with URLs
+mug dev                      # serve locally with View As banner
+```
+
+**Home screen**: `surfaces/_home.json` configures the workspace root URL layout (groups, buttons, cards). Not a portal but similar config. See `.mug/docs/api.md`.

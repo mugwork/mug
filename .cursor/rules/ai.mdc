@@ -1,0 +1,150 @@
+---
+description: AI in Mug workflows — smart model routing, multi-provider support, BYOK billing
+globs: ["workflows/**", "connectors/**"]
+---
+
+# Mug AI
+
+Add AI to workflows with `ctx.ai()`. Smart routing picks the cheapest model that handles the task.
+
+Full API reference: `.mug/docs/ai.md`
+
+## ctx.ai() basics
+
+**You control the prompt and system message.** `prompt` = user message, `system` = system prompt. Both are passed directly to the model.
+
+```typescript
+// Pick a tier — uses your workspace's configured model
+const result = await ctx.ai("fast", {
+  prompt: "Classify this as billing, technical, or general",
+  system: "Reply with exactly one word.",
+  maxTokens: 10,
+});
+// result.text = "billing"
+// result.routing = { tier: "fast", model: "gpt-5.4-nano", provider: "openai", reason: "tier:fast" }
+
+// Auto — Mug picks the tier based on prompt complexity
+await ctx.ai("auto", { prompt, system });
+
+// Direct provider/model
+await ctx.ai("openai/gpt-4.1", { prompt, system });
+```
+
+## Tiers
+
+| Tier | Default model | Best for |
+|------|---------------|----------|
+| `"fast"` | openai/gpt-5.4-nano | Classification, extraction, formatting |
+| `"balanced"` | @cf/moonshotai/kimi-k2.6 | Summarization, analysis, general-purpose |
+| `"powerful"` | anthropic/claude-sonnet-4-6 | Complex reasoning, nuanced judgment |
+
+## Patterns by use case
+
+### Classification
+```typescript
+const result = await ctx.ai("fast", {
+  prompt: `Classify this ticket:\n\n${ticket.body}`,
+  system: "Reply with exactly one word: billing, technical, or general.",
+  maxTokens: 10,
+});
+```
+
+### Extraction
+```typescript
+const result = await ctx.ai("fast", {
+  prompt: `Extract from this email:\n\n${email.body}\n\nReturn JSON: { "name": "", "email": "", "issue": "" }`,
+  system: "Return valid JSON only.",
+  maxTokens: 200,
+});
+const data = JSON.parse(result.text);
+```
+
+### Summarization
+```typescript
+const result = await ctx.ai("balanced", {
+  prompt: `Summarize in 2-3 sentences:\n\n${report.body}`,
+  system: "Be concise. Focus on key findings and actions.",
+  maxTokens: 200,
+});
+```
+
+### Analysis
+```typescript
+const result = await ctx.ai("balanced", {
+  prompt: `Identify top 3 issues:\n\n${JSON.stringify(metrics)}`,
+  system: "Be specific. Reference actual numbers.",
+  maxTokens: 500,
+});
+```
+
+### Complex reasoning
+```typescript
+const result = await ctx.ai("powerful", {
+  prompt: `Evaluate whether we should ${decision}. Consider risks, costs, timeline.`,
+  system: "Think step by step. End with a clear recommendation.",
+  maxTokens: 1000,
+});
+```
+
+## Multi-provider config (mug.json)
+
+```json
+{
+  "ai": {
+    "routing": {
+      "fast": "openai/gpt-5.4-nano",
+      "balanced": "@cf/moonshotai/kimi-k2.6",
+      "powerful": "anthropic/claude-sonnet-4-6"
+    }
+  }
+}
+```
+
+Per-call model override:
+```typescript
+await ctx.ai("powerful", {
+  prompt,
+  system,
+  routing: { powerful: "anthropic/claude-opus-4-7" },
+});
+```
+## BYOK (Bring Your Own Key)
+
+Store your key for unlimited AI at zero Mug credit cost:
+
+```bash
+mug secret set ai.anthropic=sk-ant-xxx
+```
+
+Configure per-tier in mug.json:
+```json
+{
+  "ai": {
+    "billing": {
+      "fast": "mug-metered",
+      "balanced": "mug-metered",
+      "powerful": "ai.anthropic"
+    }
+  }
+}
+```
+
+Per-workflow: `workflow("name", handler, { billing: "ai.anthropic" })`
+
+Per-call: `await ctx.ai("auto", { prompt, billing: "ai.anthropic" })`
+
+## Cost optimization
+
+- **Use tier names directly** — `"fast"` for classification/extraction, `"balanced"` for summarization, `"powerful"` for reasoning
+- **Set `maxTokens` tight** — if you expect one word, use `maxTokens: 10`
+- **BYOK the powerful tier** — most expensive calls on your own key, cheap tiers on Mug credits
+- **Check `result.routing`** during dev — verify the router picks the right tier
+
+## CLI commands
+
+```bash
+mug secret set ai.anthropic=<key>    # Store BYOK key
+mug secret set ai.openai=<key>       # Store BYOK key
+mug secret list                       # Show configured keys
+mug secret remove ai.anthropic        # Remove a BYOK key
+```
