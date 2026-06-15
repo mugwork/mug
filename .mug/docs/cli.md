@@ -107,13 +107,33 @@ Prompts for email, sends a 6-digit verification code, and stores the session tok
 
 ### mug whoami
 
-Show account info and workspace membership.
+Show account email and current workspace.
 
 ```bash
 mug whoami
 ```
 
-Displays: account email, current workspace (name, ID, plan tier, role) if in a workspace directory, and all workspaces the account has access to.
+Displays account email. If run inside a workspace directory, also shows the current workspace name, plan tier, and role. Points to `mug workspaces` for full listing.
+
+### mug workspaces
+
+List all workspaces — cloud account and local machine.
+
+```bash
+mug workspaces
+```
+
+Merges cloud workspaces (from your account) with locally cloned workspaces (tracked in `~/.mug/workspaces.json`). Shows name, tier, role, URL, and local path for each. Marks the current workspace (matching cwd). Local-only workspaces not registered on the platform are listed separately. Works offline with local data only if not logged in.
+
+### mug start
+
+Get started — orientation for new workspaces, progress checklist for existing ones.
+
+```bash
+mug start
+```
+
+In a new workspace (no connectors, workflows, agents, or surfaces), shows a brief orientation explaining what Mug is and what you can build, then recommends starting with a connector. In an existing workspace, shows a progress checklist of the 5 primary components (connectors, workflows, agents, surfaces, Slack app) with what's built and what to build next.
 
 ## Development
 

@@ -228,7 +228,8 @@ mug account email <new-email>        # change email (verifies both old and new)
 mug account invites                  # show pending incoming and sent invites
 mug account accept <id>              # accept a workspace invite
 mug account decline <id>             # decline a workspace invite
-mug whoami                            # show account, workspaces, and pending invites
+mug whoami                            # show account email and current workspace
+mug workspaces                       # list all workspaces — cloud account and local machine
 mug issue                            # file a bug report or feature request
 ```
 Use `/start` for guided onboarding and to see what to build next. Use `/mug dev`, `/mug update`, or `/mug deploy` to run CLI commands via the `/mug` skill.

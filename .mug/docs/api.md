@@ -1584,9 +1584,11 @@ The `.remote` manifest (`databases/.remote`) tracks production state:
 |---------|-------------|
 | `mug init [name]` | Create a new workspace. Auto-registers with platform and reserves subdomain if logged in. |
 | `mug clone [name]` | Clone an existing workspace from Mug cloud. Scaffolds locally and connects to cloud — files and databases stay remote until `mug pull --all`. |
+| `mug start` | Get started — orientation for new workspaces, progress checklist for existing ones |
 | `mug update` | Regenerate platform files (CLAUDE.md, skills, docs). Warns if CLI is outdated. Updates instruction files, skills, and docs only — your code in `connectors/`, `workflows/`, `agents/` is safe. Framework types come from the `@mugwork/mug` package. |
 | `mug login` | Authenticate via email verification (creates account on first use) |
-| `mug whoami` | Show account email, current workspace, and all workspace memberships |
+| `mug whoami` | Show account email and current workspace |
+| `mug workspaces` | List all workspaces — cloud account and local machine, with paths and roles |
 | `mug create workspace <name>` | Register workspace on the platform |
 
 ### Development
@@ -1684,7 +1686,8 @@ The `.remote` manifest (`databases/.remote`) tracks production state:
 | `mug account invites` | Show pending incoming and sent invites |
 | `mug account accept <id>` | Accept a workspace invite |
 | `mug account decline <id>` | Decline a workspace invite |
-| `mug whoami` | Show account, workspaces, and pending invites |
+| `mug whoami` | Show account email and current workspace |
+| `mug workspaces` | List all workspaces — cloud account and local machine |
 
 ### Webhooks & Issues
 

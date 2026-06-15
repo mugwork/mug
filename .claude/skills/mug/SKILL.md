@@ -1,7 +1,7 @@
 ---
 name: mug
-description: Run Mug CLI developer workflow commands — dev server, update, deploy, clone, shutdown.
-argument-hint: "dev | shutdown | update | deploy | clone"
+description: Run Mug CLI developer workflow commands — dev server, update, deploy, clone, shutdown, workspaces.
+argument-hint: "dev | shutdown | update | deploy | clone | workspaces"
 ---
 
 # Mug CLI
@@ -21,6 +21,7 @@ Run the matching CLI command in the workspace root:
 - `update` → `mug update`
 - `deploy` → `mug deploy`
 - `clone` → see **Clone** below
+- `workspaces` → `mug workspaces`
 
 If no argument or unrecognized argument, show available commands and ask which to run.
 
