@@ -18,7 +18,7 @@ Run the matching CLI command in the workspace root:
 
 - `dev` → see **Dev Server** below
 - `shutdown` → see **Shutdown** below
-- `update` → `mug update`
+- `update` → `mug update` (forces full refresh — normally auto-runs every 4h)
 - `deploy` → `mug deploy`
 - `clone` → see **Clone** below
 - `workspaces` → `mug workspaces`

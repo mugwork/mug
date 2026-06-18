@@ -1,11 +1,11 @@
 ---
-description: Get started with Mug — guided orientation for new workspaces, progress checklist for existing ones
+description: Get started with Mug — unpack agent kit, guided orientation for new workspaces, progress checklist for existing ones
 globs: ["mug.json"]
 ---
 
 # Start
 
-Guided onboarding and "what's next?" for Mug workspaces.
+Unpack agent kit and guided onboarding for Mug workspaces. `mug start` unpacks the full teaching kit (CLAUDE.md, skills, docs) to `~/.mug/agent-kit/` — works from anywhere, even before a workspace exists.
 
 ## Detect what's built
 

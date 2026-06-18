@@ -99,11 +99,14 @@ mug usage --json                     # structured output
 
 mug workspace plan                   # view or change plan tier (opens Stripe Checkout for paid tiers)
 
-mug billing                              # view plan, email, per-meter overage status + caps
-mug billing --overage operations=on      # toggle overage on for a meter
-mug billing --overage sms=off            # toggle overage off (hard cap at plan limit)
-mug billing --cap ai_credits=50          # set overage cap to $50/mo for a meter
-mug billing --email billing@co.com       # set billing notification email
+mug billing                                  # view plan, price, next invoice, per-meter overage settings
+mug billing --overage operations=on          # toggle overage on for a meter
+mug billing --overage sms=off                # toggle overage off (hard cap at plan limit)
+mug billing --cap ai_credits=50              # set overage cap to $50/mo for a meter
+mug billing --notify-email billing@co.com    # set overage notification email
+mug workspace plan                           # upgrade or downgrade plan
+mug workspace archive                        # cancel (archive workspace)
+mug workspace restore                        # restore archived workspace
 ```
 
 ## Handling limit errors in workflows

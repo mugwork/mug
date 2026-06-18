@@ -48,9 +48,9 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 - `ctx.fileText(path)` — read a file as UTF-8 string
 - `ctx.secret(name)` — read a workspace secret by name (from `.mug/secrets`). Throws if not found.
 - `ctx.waitFor(eventName, options?)` — pause workflow until an external event arrives. Returns `{ payload, type, timedOut }`. Options: `{ timeout?: "1 hour" | "24 hours", message?: string }`. Zero cost while waiting.
-- `ctx.waitForUrl(eventName)` — generate a one-time callback URL for embedding in notifications. Returns a URL that, when visited, sends the event to the waiting workflow.
+- `await ctx.waitForUrl(eventName)` — generate a one-time callback URL for embedding in notifications. Returns a URL that, when visited, sends the event to the waiting workflow.
 - `ctx.http(url, options?)` — outbound HTTP request. Returns `{ status, headers, body, json, ok }`. Throws on non-2xx by default (`throwOnError: false` to handle manually). Auto-retries connection errors and 429 with exponential backoff. Options: `{ method?, headers?, body?, throwOnError?, retry?: { attempts? } | false, timeout?, sign?: { secret, header? } }`
-- `ctx.respond(body, status?)` — set a custom HTTP response for webhook-triggered workflows. First call wins. Use for Slack challenge verification, Twilio TwiML, etc. If not called, webhook returns default `{ ok: true }`.
+- `await ctx.respond(body, status?)` — set a custom HTTP response for webhook-triggered workflows. First call wins. Use for Slack challenge verification, Twilio TwiML, etc. If not called, webhook returns default `{ ok: true }`.
 - `ctx.action(connectorName)` — returns a handle for outbound operations: `.read(table, id)`, `.create(table, fields)`, `.update(table, id, fields)`, `.delete(table, id)`, `.upsert(table, id, fields)`. **Workflow-only** — all external writes go through `ctx.action()`. Transforms auto-snapshot before writing (for rollback). Returns `ActionResult` with `{ connector, table, operation, recordId, data, snapshot, operationId }`.
 - `ctx.rollback(actionId)` — undo a prior action using its stored before-snapshot. Executes the inverse as a new action. `ctx.rollbackRun(workflowRunId)` rolls back all actions from a run in reverse order.
 - `maxOperations` — default 100 per workflow run. Override: `workflow(name, handler, { maxOperations: 500 })`. Counts all `ctx.action()` calls.
@@ -163,7 +163,7 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 
 **CLI commands:**
 ```bash
-mug start                            # get started — orientation + progress checklist
+mug start                            # unpack agent kit to ~/.mug/agent-kit/ + workspace orientation
 mug dev                              # start local dev server (auto-detects ports from 8787)
 mug dev --port <port>                # pin to a specific port
 mug dev --tunnel                     # expose via Cloudflare Quick Tunnel (requires cloudflared)
@@ -175,17 +175,18 @@ mug status <workflow> <instanceId>   # check production status (--json)
 mug sql <db> <sql>                   # run SQL against databases/<db>.db (--json, --production, --dev, --port) (alias: mug query)
 mug usage                            # usage across all 6 billing dimensions (--json, --period)
 mug workspace plan                   # view or change workspace plan tier (opens Stripe for paid tiers)
-mug billing                          # view billing + per-meter overage settings
-mug billing --overage <meter>=on|off # toggle overage per meter (e.g. operations=on)
-mug billing --cap <meter>=<dollars>  # set overage cap per meter (e.g. ai_credits=50)
-mug billing --email <address>       # set billing notification email
+mug billing                              # view billing + per-meter overage settings (--json)
+mug billing --overage <meter>=on|off     # toggle overage per meter (e.g. operations=on)
+mug billing --cap <meter>=<dollars>      # set overage cap per meter (e.g. ai_credits=50)
+mug billing --notify-email <address>     # set overage notification email
+mug update                           # force-refresh instructions, skills, docs, remote manifests (auto-runs every 4h)
 mug validate                         # check workspace for issues before deploying (--verbose, --json)
-mug deploy                           # deploy to production (includes database push)
-mug push databases/<name>            # upload local database to production
-mug push --all                       # upload all local files and databases
+mug deploy                           # deploy to production (includes database push + source archive) (--json)
+mug push databases/<name>            # upload local database to production (--json)
+mug push --all                       # upload all local files and databases (--json)
 mug push --all --force               # push all without confirmation prompt
 mug pull databases/<name>            # download production database locally
-mug pull --all                       # download all remote files and databases
+mug pull --all                       # download all remote files, databases, and source files
 mug form init <name>                 # scaffold form + handler workflows
 mug form validate                    # check form schemas for errors
 mug form list                        # list forms and URLs
@@ -206,12 +207,13 @@ mug demo enable <surface> --as <id>  # share surface pre-auth'd (--expires, --no
 mug demo disable <surface>           # revoke demo access
 mug demo status                      # show active demos
 mug slack setup                       # set up Slack app (interactive — creates app, stores credentials)
+mug slack token                       # set or rotate Slack bot/refresh tokens (--access-token, --refresh-token)
 mug webhooks                          # list webhook URLs, inbound channels, event triggers
 mug brain <agent>                     # inspect agent brain memory (struggles, entities, outcomes, sessions)
 mug brain <agent> struggles           # review unresolved struggles — knowledge gaps and edge cases
 mug login                             # authenticate via email verification
-mug clone [name]                     # clone existing workspace from Mug cloud to local machine
-mug create workspace <name>          # register workspace (--subdomain, --tier free|starter|pro|business)
+mug clone [name]                     # clone workspace from cloud (pulls source files automatically)
+mug create workspace <name>          # register workspace (--subdomain, --tier free|starter|pro|business, --interval monthly|annual)
 mug workspace status                 # workspace info and plan tier
 mug workspace plan                   # view or change plan tier
 mug workspace invite <email>         # invite admin to workspace
@@ -230,6 +232,12 @@ mug account accept <id>              # accept a workspace invite
 mug account decline <id>             # decline a workspace invite
 mug whoami                            # show account email and current workspace
 mug workspaces                       # list all workspaces — cloud account and local machine
+mug sources                          # list sync sources in this workspace
+mug databases                        # list databases in this workspace
+mug workflows                        # list workflows in this workspace
+mug agents                           # list agents in this workspace
+mug surfaces                         # list surfaces in this workspace
+mug files                            # list files in this workspace
 mug issue                            # file a bug report or feature request
 ```
 Use `/start` for guided onboarding and to see what to build next. Use `/mug dev`, `/mug update`, or `/mug deploy` to run CLI commands via the `/mug` skill.
@@ -340,5 +348,6 @@ databases/        — local SQLite files synced to production DOs (.db files git
 mug.json          — workspace config
 slack.json        — Slack app config
 ```
+Discover what's in this workspace by listing these directories. `mug.json` has workspace config (name, AI routing, sources, branding). Use `mug sources`, `mug databases`, `mug workflows`, `mug agents`, `mug surfaces`, and `mug files` to list workspace contents, or browse the directories directly.
 
 <!-- mug:end -->

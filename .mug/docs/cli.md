@@ -50,24 +50,21 @@ Requires `mug login` first.
 
 ### mug update
 
-Regenerate platform files locally. Run after updating the CLI, changing `mug.json`, or restructuring your workspace. Warns if the CLI is outdated.
+Keep the workspace current with the Mug platform. Runs automatically every 4 hours when you use any CLI command (`dev`, `deploy`, `push`, `pull`). Running `mug update` explicitly forces a full refresh regardless of when it last ran.
 
 ```bash
-mug update
+mug update                # force full refresh now
 ```
 
-`mug update` updates platform files only — your code in `connectors/`, `workflows/`, `agents/` is safe. Framework types come from the `@mugwork/mug` package.
+`mug update` updates platform files only — your code in `connectors/`, `workflows/`, `agents/` is safe.
 
-Updates (down — production to local):
-- **Scaffolding** — creates missing `files/` and `databases/` directories with `.remote` manifests
-- **Instruction files** — CLAUDE.md, AGENTS.md, .cursor/rules/mug.mdc (regenerates the `mug:start`/`mug:end` block)
-- **Skills** — .claude/skills/, .agents/skills/, .cursor/rules/
-- **Docs** — .mug/docs/ (platform reference documentation)
-- **Remote manifests** — fetches production state into `files/.remote` and `databases/.remote`
-
-Uploads (up — local to production):
-- **Local files** — new or changed files in `files/` are uploaded to R2
-- **Local databases** — new or changed `.db` files in `databases/` are pushed to production DOs
+What it does:
+- **CLI version check** — auto-upgrades the globally installed CLI if a newer version is published
+- **Instruction files** — regenerates the `mug:start`/`mug:end` block in CLAUDE.md, AGENTS.md, .cursor/rules/mug.mdc
+- **Skills** — syncs .claude/skills/, .agents/skills/, .cursor/rules/ from CLI templates
+- **Docs** — syncs .mug/docs/ platform reference documentation
+- **Scaffolding** — creates missing directories (`files/`, `databases/`, `agents/`, etc.) with `.remote` manifests
+- **Remote manifests** — fetches production state (files, databases, deployed source files) into local manifests so you can see what exists remotely vs locally
 
 Output: `Synced 2 instruction files, 6 skills, 4 docs`
 
@@ -91,6 +88,7 @@ Upload local files or databases to production.
 mug push databases/crm                     # upload a local database to production
 mug push files/templates/invoice.html      # upload a specific file
 mug push --all                             # upload all local files and databases
+mug push --json                            # JSON output (uploaded/errors arrays)
 ```
 
 Reads from `databases/*.db` and `files/`, uploads to production DOs and R2. The `.remote` manifest is updated after each push.
@@ -127,13 +125,51 @@ Merges cloud workspaces (from your account) with locally cloned workspaces (trac
 
 ### mug start
 
-Get started — orientation for new workspaces, progress checklist for existing ones.
+Unpack the agent kit and show workspace orientation.
 
 ```bash
 mug start
 ```
 
-In a new workspace (no connectors, workflows, agents, or surfaces), shows a brief orientation explaining what Mug is and what you can build, then recommends starting with a connector. In an existing workspace, shows a progress checklist of the 5 primary components (connectors, workflows, agents, surfaces, Slack app) with what's built and what to build next.
+Unpacks the full agent teaching kit (CLAUDE.md, skills, docs) to `~/.mug/agent-kit/`. This works from anywhere — inside or outside a workspace. The agent kit is version-stamped and only re-unpacks when the CLI updates.
+
+If run inside a workspace: also shows orientation (new workspace) or a progress checklist (existing workspace) of the 5 primary components (connectors, workflows, agents, surfaces, Slack app) with what's built and what to build next.
+
+## Workspace Inspection
+
+List commands for each workspace object type. Each shows all items with descriptions extracted from source files.
+
+### mug sources
+
+List sync sources (connectors) in this workspace. Shows name and description from the connector's `description` field.
+
+### mug databases
+
+List databases in this workspace. Shows name, file size, and description from `databases/databases.json`.
+
+The optional `databases/databases.json` file provides descriptions for databases:
+```json
+{
+  "platform": { "description": "Platform workspace and workflow data" },
+  "crm": { "description": "Customer relationship data from HubSpot" }
+}
+```
+
+### mug workflows
+
+List workflows in this workspace. Shows name and description from the workflow's `description` option.
+
+### mug agents
+
+List agents in this workspace. Shows name and description (or model) from `agent.json`.
+
+### mug surfaces
+
+List surfaces in this workspace. Shows name, type (form/portal), and description from the surface JSON.
+
+### mug files
+
+List files in this workspace. Shows filename and file size.
 
 ## Development
 
@@ -236,14 +272,18 @@ mug usage --json                 # structured JSON output
 
 ### mug billing
 
-View or update workspace billing and overage settings. Per-unit overages are enabled by default with a tier-appropriate dollar cap.
+View or update workspace billing and overage settings. Shows plan with price and next invoice date. Per-unit overages are enabled by default on paid plans with a tier-appropriate dollar cap. Hidden on free plans.
 
 ```bash
-mug billing                              # show plan, email, per-meter overage status + caps
-mug billing --overage operations=on      # toggle overage on for a meter
-mug billing --overage sms=off            # toggle overage off (hard cap at plan limit)
-mug billing --cap ai_credits=50          # set overage cap to $50/mo for a meter
-mug billing --email billing@co.com       # set billing notification email
+mug billing                                  # show plan, price, next invoice, per-meter overage settings
+mug billing --json                           # raw JSON output
+mug billing --overage operations=on          # toggle overage on for a meter
+mug billing --overage sms=off                # toggle overage off (hard cap at plan limit)
+mug billing --cap ai_credits=50              # set overage cap to $50/mo for a meter
+mug billing --notify-email billing@co.com    # set overage notification email
+mug workspace plan                           # upgrade or downgrade plan
+mug workspace archive                        # cancel (archive workspace)
+mug workspace restore                        # restore archived workspace
 ```
 
 Meter names: `operations`, `records`, `storage_bytes`, `email`, `sms`, `ai_credits`.
@@ -650,6 +690,7 @@ Bundle workspace code and deploy to Cloudflare Workers.
 
 ```bash
 mug deploy
+mug deploy --json         # structured JSON output
 ```
 
 Requires `MUG_API_KEY` in `.mug/secrets`. Bundles TypeScript, validates, creates/updates the Worker with correct bindings, and uploads secrets.

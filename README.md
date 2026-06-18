@@ -11,31 +11,64 @@ Ship complete AI operating systems for any business with the coding agent subscr
 # Get Started with Mug CLI Agent Kit
 
 ## Install
-CLI toolkit that gives Claude Code, Codex, & Cursor everything they need to build on Mug — CLI commands, agent instructions, skills for every platform feature, and all platform docs.
+Mug's CLI Agent Kit gives Claude, Codex, & Cursor everything they need to build anything on Mug — agentic CLI, CLAUDE.md/AGENTS.md, skills that teach the entire Mug platform, and the entire Mug docs library.
 
+
+### Single-command global install
 ```
-# Single-command global install
 npm install -g @mugwork/mug
-
-# Prompt your agent to install
-Install the Mug CLI Agent kit globally by running `npm install -g @mugwork/mug`
 ```
 
-### Log In
-Log in or create an account with `mug login`
+### Prompt your agent to install & learn how to use Mug in one shot
+```
+Install the Mug.work CLI Agent Kit by running `npm install -g @mugwork/mug`. After install, run `mug start`, then review the unpacked agent kit materials to help me get started.
+```
 
-### Create New Mug Workspace
-First, create a local folder for your workspace. Then from that folder, run `mug init <your-new-workspace-name>`. This scaffolds your new workspace locally and registers it with the Mug platform.
+## Human CLI
 
-IMPORTANT: Restart your coding agent after init so it picks up CLAUDE.md/AGENTS.md and skills.
+Mug is meant to be driven by a coding agent like Claude, Codex, or Cursor, but we wanted the CLI to be usable for humans too. Open a terminal and run `mug` from any directory. You'll be prompted to log in if you're not already, then the CLI walks you through everything interactively. Arrow keys to navigate, enter to select. No commands to memorize.
 
-### Clone Existing Mug Workspace
-First, create a local folder for your workspace. Then from that folder, run `mug clone` to clone an existing Mug workspace from the cloud. This scaffolds the workspace locally and connects it to the Mug platform. Workspace files and databases stay remote until you pull them with `mug pull`.
+Scaffold a fresh local workspace or clone an existing workspace from the cloud. Navigate into a workspace to launch the Mug dev server + workspace explorer UI, validate + deploy workspaces, browse the entire contents of a workspace, and even manage billing.
 
-IMPORTANT: Restart your coding agent after clone so it picks up CLAUDE.md/AGENTS.md and skills.
+## Agentic CLI
 
-### Start
-Use `/start` for a quick guide on what you and your agent can do with Mug.
+AI coding agents like Claude, Codex, & Cursor are who the Mug CLI was really designed for. They drive the CLI via bash commands:
+
+```bash
+mug login                          # authenticate
+mug init <name>                    # create new workspace
+mug clone                          # clone existing workspace from cloud
+mug dev                            # start local dev server
+mug deploy                         # deploy to production
+mug --help                         # full command reference
+```
+
+Your coding agent can build everything the Mug platform supports by using the CLI and the agent kit materials bundled in your workspace.
+
+## Set up a new workspace
+
+### Manually via terminal
+1. Run `mug` from any directory
+2. Select `Create New Workspace` from menu
+3. Create or navigate to the folder you want to put your workspace in
+4. Select `Scaffold workspace here` from menu
+
+Now launch your coding agent from the workspace directory and it will automatically pick up all agent kit materials in the workspace: CLAUDE.md/AGENTS.md, skills, and Mug docs.
+
+### Prompt your agent
+```
+Run `mug init` to create a new Mug workspace called [name of your new workspace] in [directory you want workspace in]
+```
+
+**IMPORTANT**: After agent scaffolds your new workspace, re-launch your coding agent from the new workspace directory so it automatically picks up all agent kit materials in the workspace: CLAUDE.md/AGENTS.md, skills, and Mug docs.
+
+## Auto Update
+
+The Mug CLI keeps workspaces in sync with Mug platform improvements by automatically updating global CLI npm package and all agent kit materials: CLAUDE.md/AGENTS.md, skills, and Mug docs.
+
+## Start
+
+Use /start skill for a quick guide on what you and your agent can do with Mug.
 
 ---
 
@@ -206,7 +239,7 @@ workflow("handle-approve", async (ctx) => {
 
 # Links
 
-- [Mug.work](https://mug.work) — marketing website
+- [Mug.work](https://mug.work) — product site
 - [Mug Connectors](https://github.com/mugwork/mug-connectors) — ready-to-use API sync connectors for Mug
 - [Demo Surfaces](https://demo.mug.work) — interactive headless web surface examples
 
@@ -214,5 +247,5 @@ workflow("handle-approve", async (ctx) => {
 
 # Support / Contact
 
-- Contact: Founder / Chief Vibe Coder — Tyler Berggren, [tyler@mug.work](mailto:tyler@mug.work)
+- Contact: Founder / Chief Vibe Coder — Tyler Berggren | [tyler@mug.work](mailto:tyler@mug.work) | [LinkedIn](https://www.linkedin.com/in/tyler-berggren)
 - [Open an issue](https://github.com/mugwork/mug/issues)

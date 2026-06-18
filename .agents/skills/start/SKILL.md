@@ -11,10 +11,11 @@ Guided onboarding for new workspaces and "what's next?" for existing ones. Goal:
 
 If there's no `mug.json` in the current directory, the user isn't in a workspace yet:
 
-1. Ask if they want to create a new workspace or clone an existing one
-2. New → run `mug init <name>` (ask for a workspace name)
-3. Clone → run `mug clone`
-4. After init/clone completes, continue to Step 2
+1. Run `mug start` — this unpacks the agent kit to `~/.mug/agent-kit/` (CLAUDE.md, skills, docs) and prints the path. Review the materials there for full platform context.
+2. Ask if they want to create a new workspace or clone an existing one
+3. New → run `mug init <name>` (ask for a workspace name)
+4. Clone → run `mug clone`
+5. After init/clone completes, continue to Step 2
 
 ## Step 2 — Detect what's built
 

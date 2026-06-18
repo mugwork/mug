@@ -1355,7 +1355,7 @@ Public holidays are fetched from Nager.Date for the configured country on each d
       "schedule": "<cron expression>",
       "file": "workflows/<name>.ts",
       "webhook": "(deprecated — use workflow options instead)",
-      "trigger": "{ type: 'slack_command' | 'slack_event', command?, event?, description? }"
+      "trigger": "{ type: 'slack_command' | 'slack_event' | 'slack_shortcut' | 'data', command?, event?, description?, source?, table?, on?, includeInitialSync? }"
     }
   },
   "inbound": "(deprecated — use workflow options instead)",
@@ -1544,6 +1544,17 @@ The `.remote` manifest (`files/.remote`) tracks production state:
 
 Local SQLite files synced to production Durable Objects. `.db` files are gitignored — the `.remote` manifest tracks what exists in production including full table schemas.
 
+The optional `databases/databases.json` file provides descriptions for databases (tracked in git):
+
+```json
+{
+  "platform": { "description": "Platform workspace and workflow data" },
+  "crm": { "description": "Customer data synced from HubSpot" }
+}
+```
+
+Descriptions appear in `mug databases`, the workspace explorer, and the CLI landing screen.
+
 The `.remote` manifest (`databases/.remote`) tracks production state:
 
 ```json
@@ -1570,7 +1581,8 @@ The `.remote` manifest (`databases/.remote`) tracks production state:
 
 ### Sync behavior
 
-- `mug push` uploads local files/databases to production; `mug pull` downloads remote files/databases
+- `mug deploy` archives source files (connectors, workflows, surfaces, agents, config) to R2 alongside the bundle
+- `mug push` uploads local files/databases to production; `mug pull` downloads remote files/databases and source files
 - `mug dev` and `mug update` repair missing directories and manifests automatically
 - Files not in `.remote` but present locally are uploaded on next `mug push`
 - Files in `.remote` but not present locally are remote-only — accessible via `ctx.file()` at runtime
@@ -1583,13 +1595,24 @@ The `.remote` manifest (`databases/.remote`) tracks production state:
 | Command | Description |
 |---------|-------------|
 | `mug init [name]` | Create a new workspace. Auto-registers with platform and reserves subdomain if logged in. |
-| `mug clone [name]` | Clone an existing workspace from Mug cloud. Scaffolds locally and connects to cloud — files and databases stay remote until `mug pull --all`. |
+| `mug clone [name]` | Clone an existing workspace from Mug cloud. Pulls source files (connectors, workflows, surfaces, agents) automatically. Files and databases stay remote until `mug pull --all`. |
 | `mug start` | Get started — orientation for new workspaces, progress checklist for existing ones |
 | `mug update` | Regenerate platform files (CLAUDE.md, skills, docs). Warns if CLI is outdated. Updates instruction files, skills, and docs only — your code in `connectors/`, `workflows/`, `agents/` is safe. Framework types come from the `@mugwork/mug` package. |
 | `mug login` | Authenticate via email verification (creates account on first use) |
 | `mug whoami` | Show account email and current workspace |
 | `mug workspaces` | List all workspaces — cloud account and local machine, with paths and roles |
 | `mug create workspace <name>` | Register workspace on the platform |
+
+### Workspace Inspection
+
+| Command | Description |
+|---------|-------------|
+| `mug sources` | List sync sources with descriptions |
+| `mug databases` | List databases with sizes and descriptions (from `databases/databases.json`) |
+| `mug workflows` | List workflows with descriptions |
+| `mug agents` | List agents with descriptions or model |
+| `mug surfaces` | List surfaces with type and description |
+| `mug files` | List files with sizes |
 
 ### Development
 
@@ -1616,9 +1639,10 @@ The `.remote` manifest (`databases/.remote`) tracks production state:
 | `mug push files/<path>` | Upload a specific file to production |
 | `mug push --all` | Upload all local files and databases |
 | `mug push --all --force` | Push all without confirmation prompt |
+| `mug push --json` | JSON output (uploaded/errors arrays) |
 | `mug pull databases/<name>` | Download production database locally |
 | `mug pull files/<path>` | Download a specific file from production |
-| `mug pull --all` | Download all remote files and databases |
+| `mug pull --all` | Download all remote source files, user files, and databases |
 | `mug usage` | Show usage across all 6 billing dimensions (--json, --period YYYY-MM) |
 | `mug usage --json` | JSON output |
 
@@ -1670,7 +1694,7 @@ The `.remote` manifest (`databases/.remote`) tracks production state:
 |---------|-------------|
 | `mug workspace status` | Show workspace metadata, URL, plan tier, last deploy |
 | `mug workspace plan` | View or change plan tier (opens Stripe Checkout for paid tiers) |
-| `mug billing` | View/update billing settings (`--email`) — manage overages at mug.work |
+| `mug billing` | View plan, price, next invoice, per-meter overage settings (`--overage`, `--cap`, `--notify-email`, `--json`) |
 | `mug workspace invite <email>` | Send admin invite to workspace |
 | `mug workspace transfer <email>` | Transfer ownership (sends invite, transfers when accepted) |
 | `mug workspace remove <email>` | Remove member |
@@ -1695,13 +1719,15 @@ The `.remote` manifest (`databases/.remote`) tracks production state:
 |---------|-------------|
 | `mug webhooks` | List webhook URLs, inbound channels, and event triggers |
 | `mug issue` | File a bug report or feature request on GitHub (`--dry-run` to preview) |
+| `mug slack setup` | Set up Slack app (interactive — creates app, stores credentials) |
+| `mug slack token` | Set or rotate Slack bot/refresh tokens (`--access-token`, `--refresh-token`) |
 
 ### Deployment
 
 | Command | Description |
 |---------|-------------|
 | `mug validate` | Check workspace for issues before deploying. `--verbose` for info-level, `--json` for structured output. |
-| `mug deploy` | Bundle and deploy to Cloudflare. Requires `MUG_API_KEY` in `.mug/secrets`. |
+| `mug deploy` | Bundle and deploy to Cloudflare. Requires `MUG_API_KEY` in `.mug/secrets`. `--json` for structured output. |
 
 ### Production workflow
 
