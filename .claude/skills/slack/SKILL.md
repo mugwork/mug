@@ -319,6 +319,116 @@ workflow("handle-dispatch", async (ctx) => {
 });
 ```
 
+## Modal Forms
+
+Slash commands and shortcuts can open modals for structured data collection. The same workflow handles opening, submission, and dynamic selects.
+
+### Open a modal
+
+```typescript
+workflow("create-job", async (ctx) => {
+  if (ctx.params.type === "slash_command") {
+    await ctx.slack.openModal({
+      triggerId: ctx.params.triggerId,
+      view: {
+        type: "modal",
+        callback_id: "mug:create-job:submit",
+        private_metadata: JSON.stringify({ channelId: ctx.params.channelId }),
+        title: { type: "plain_text", text: "New Job" },
+        submit: { type: "plain_text", text: "Create" },
+        blocks: [
+          {
+            type: "input",
+            block_id: "title_block",
+            label: { type: "plain_text", text: "Title" },
+            element: { type: "plain_text_input", action_id: "title" },
+          },
+          {
+            type: "input",
+            block_id: "priority_block",
+            label: { type: "plain_text", text: "Priority" },
+            element: {
+              type: "static_select",
+              action_id: "priority",
+              options: [
+                { text: { type: "plain_text", text: "Low" }, value: "low" },
+                { text: { type: "plain_text", text: "Medium" }, value: "medium" },
+                { text: { type: "plain_text", text: "High" }, value: "high" },
+              ],
+            },
+          },
+          {
+            type: "input",
+            block_id: "customer_block",
+            label: { type: "plain_text", text: "Customer" },
+            element: {
+              type: "external_select",
+              action_id: "customer-picker",
+              placeholder: { type: "plain_text", text: "Search customers..." },
+              min_query_length: 1,
+            },
+          },
+        ],
+      },
+    });
+    return { opened: true };
+  }
+
+  // Handle submission
+  if (ctx.params.type === "view_submission") {
+    const values = ctx.params.formValues;
+    const title = values?.title_block?.title?.value;
+    const priority = values?.priority_block?.priority?.selected_option?.value;
+    const customer = values?.customer_block?.["customer-picker"]?.selected_option?.text?.text;
+    const meta = JSON.parse(ctx.params.metadata || "{}");
+
+    await ctx.exec("jobs", "INSERT INTO jobs (title, priority, customer) VALUES (?, ?, ?)", [title, priority, customer]);
+    await ctx.notify.slack({ to: meta.channelId, message: `Job created: ${title} (${priority}) for ${customer}` });
+    return { created: true };
+  }
+}, {
+  trigger: { type: "slack_command", command: "/newjob", description: "Create a new job" },
+});
+```
+
+### Modal submission params
+
+When a user submits a modal, the workflow receives:
+- `ctx.params.type` — `"view_submission"`
+- `ctx.params.actionId` — the custom part from `callback_id` (e.g. `"submit"` from `"mug:create-job:submit"`)
+- `ctx.params.formValues` — nested object: `{ block_id: { action_id: { value, selected_option, ... } } }`
+- `ctx.params.metadata` — the `private_metadata` string from the modal (stash context like channelId here)
+- `ctx.params.viewId` — for updating the modal via `ctx.slack.updateModal()`
+- `ctx.params.userId`, `ctx.params.userName`, `ctx.params.triggerId`
+
+### Update a modal (multi-step flows)
+
+```typescript
+await ctx.slack.updateModal({
+  viewId: ctx.params.viewId,
+  view: { type: "modal", title: { ... }, blocks: [ /* step 2 blocks */ ] },
+});
+```
+
+### Dynamic select menus
+
+For dropdowns that search large datasets (100+ options), use `external_select` in the modal block and configure a `suggestions` mapping in `slack.json`:
+
+```json
+{
+  "suggestions": {
+    "customer-picker": {
+      "database": "crm",
+      "query": "SELECT name, id FROM customers WHERE name LIKE ? AND _mug_deleted_at IS NULL LIMIT 20"
+    }
+  }
+}
+```
+
+The `action_id` on the `external_select` block must match the key in `suggestions`. The query receives the user's typed text as a `%value%` LIKE parameter. First column = display text, second column = value.
+
+For small option sets (under 100), use `static_select` instead — no config needed.
+
 ## Human-in-the-Loop
 
 ```typescript
@@ -383,6 +493,21 @@ Run `mug slack setup` to create the Slack app and store credentials. Interactive
 Both paths end the same: config token stored, future `mug deploy` auto-updates the manifest.
 
 `mug slack setup` detects existing state — run it multiple times as credentials come in. It only asks for what's missing.
+
+### Expired config tokens
+
+Config tokens expire if not rotated regularly. `mug deploy` rotates them automatically, but if too much time passes between deploys, both the access token and refresh token can expire. When this happens:
+
+- `mug deploy` will fail with `invalid_auth` and print: `Config token expired — run mug slack setup to refresh.`
+- `mug slack setup` validates the token and shows `✗ Config token: expired` if it's dead, then prompts for fresh tokens.
+
+**Important:** `mug slack setup` requires interactive terminal input for token entry. If you are an AI agent, do not run `mug slack setup` — instead, tell the user to run it themselves:
+
+```
+cd <workspace-path> && mug slack setup
+```
+
+The CLI detects non-interactive environments and will exit with a copy-paste command for the user.
 
 ### After setup
 

@@ -176,7 +176,18 @@ Passed to `fetch` functions. Provides credentials and sync state.
 interface SourceContext {
   credential: (name?: string) => Promise<string>;
   lastSync: string | null;  // ISO 8601 timestamp of last successful sync
+  fetch: (url: string, init?: RequestInit) => Promise<Response>;
 }
+```
+
+### ctx.fetch(url, init?)
+
+A fetch wrapper that routes requests through the platform's internal service bindings when needed. Use `ctx.fetch()` instead of raw `fetch()` in connector callbacks — it works identically for external APIs and avoids connectivity issues when calling platform endpoints.
+
+```typescript
+const res = await ctx.fetch("https://api.example.com/contacts", {
+  headers: { Authorization: `Bearer ${token}` },
+});
 ```
 
 ### credential(name?)

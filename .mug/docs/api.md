@@ -218,7 +218,7 @@ In local dev, emails redirect to `dev.email` in `mug.json` (auto-set to logged-i
 
 ### ctx.notify.sms(options)
 
-Send an SMS via Twilio.
+Send an SMS. Supports Twilio and Telnyx — provider is auto-selected based on which credentials are configured in workspace secrets. Telnyx is preferred when both are present.
 
 ```typescript
 async sms(options: {
@@ -228,6 +228,21 @@ async sms(options: {
 ```
 
 **Returns:** Same status strings as `ctx.notify.email()`.
+
+**SMS provider setup (BYOK):** Add your Twilio or Telnyx credentials via `mug secret set`:
+
+```bash
+# Option A: Telnyx (preferred — lower cost)
+mug secret set TELNYX_API_KEY=KEY...
+mug secret set TELNYX_PHONE_NUMBER=+15551234567
+
+# Option B: Twilio
+mug secret set TWILIO_ACCOUNT_SID=AC...
+mug secret set TWILIO_AUTH_TOKEN=...
+mug secret set TWILIO_PHONE_NUMBER=+15551234567
+```
+
+When both are configured, Telnyx is used. BYOK SMS sends are not metered against your plan's SMS limits. For inbound SMS (bidirectional), point your provider's webhook URL to `https://api.mug.work/inbound/sms/<workspace>`.
 
 ### ctx.notify.slack(options)
 
@@ -469,18 +484,18 @@ await ctx.http("https://partner.com/webhook", {
 Set a custom HTTP response for webhook-triggered workflows. First call wins — subsequent calls are no-ops. If never called, the webhook returns `{ ok: true }`.
 
 ```typescript
-respond(body: unknown, status?: number): void
+async respond(body: unknown, status?: number): Promise<void>
 ```
 
 ```typescript
 // Slack URL verification
 if (ctx.params.type === "url_verification") {
-  ctx.respond({ challenge: ctx.params.challenge });
+  await ctx.respond({ challenge: ctx.params.challenge });
   return;
 }
 
 // Custom status code
-ctx.respond({ error: "Invalid payload" }, 400);
+await ctx.respond({ error: "Invalid payload" }, 400);
 ```
 
 ### ctx.params
@@ -556,6 +571,29 @@ When a workflow has `trigger: { source, table, on }` in its options and synced d
   deletedPks: [...],         // deleted primary keys (on delete events)
 }
 ```
+
+#### Slack modal submission
+
+When a workflow handles a Slack modal `view_submission` (triggered via `ctx.slack.openModal()` or `ctx.slack.updateModal()`):
+
+```typescript
+{
+  type: "view_submission",                 // distinguishes from slash_command and block_actions
+  triggerId: "1234567890.123456",          // trigger ID for opening follow-up modals
+  formValues: {                            // nested view.state.values
+    block_id: {
+      action_id: { value: "user input", selected_option: { value: "opt1" } }
+    }
+  },
+  metadata: "json-string-from-private_metadata",  // the private_metadata string from the modal
+  viewId: "V0123456789",                   // for ctx.slack.updateModal() in multi-step flows
+  userId: "U0123456789",                   // who submitted
+}
+```
+
+- `formValues` mirrors Slack's `view.state.values` structure — nested by `block_id` then `action_id`
+- `metadata` is the `private_metadata` string from the modal view — use it to stash context between modal steps
+- `viewId` is needed for `ctx.slack.updateModal()` to push a new modal view in multi-step flows
 
 #### `mug run` (CLI)
 
@@ -740,6 +778,37 @@ await ctx.slack.openModal({
 ```
 
 **Throws:** `SLACK_BOT_TOKEN not configured`, Slack API errors, expired trigger ID.
+
+### ctx.slack.updateModal(options)
+
+Update an open Slack modal — used for multi-step modal flows. The `viewId` comes from `ctx.params.viewId` in a `view_submission` handler.
+
+```typescript
+async updateModal(options: {
+  viewId: string;                   // from ctx.params.viewId in view_submission
+  view: Record<string, unknown>;    // updated Slack modal view payload
+}): Promise<void>
+```
+
+```typescript
+// Multi-step modal: after first submission, show a second page
+if (ctx.params.type === "view_submission") {
+  await ctx.slack.updateModal({
+    viewId: ctx.params.viewId as string,
+    view: {
+      type: "modal",
+      title: { type: "plain_text", text: "Step 2" },
+      submit: { type: "plain_text", text: "Confirm" },
+      private_metadata: JSON.stringify({ step: 2, data: ctx.params.formValues }),
+      blocks: [
+        { type: "section", text: { type: "mrkdwn", text: "Confirm your selections:" } },
+      ],
+    },
+  });
+}
+```
+
+**Throws:** `SLACK_BOT_TOKEN not configured`, Slack API errors.
 
 ### ctx.slackApiCall(method, body)
 
@@ -1178,13 +1247,15 @@ workflow("handle-slack-action", async (ctx) => { ... }, {
 ```
 
 After `mug deploy`, webhook URLs are displayed:
-- SMS: `https://api.mug.work/inbound/sms/<workspace>` (set as Twilio webhook)
+- SMS: `https://api.mug.work/inbound/sms/<workspace>` (set as your Twilio or Telnyx webhook URL)
 - Email: `https://api.mug.work/inbound/email/<workspace>` (set as Resend inbound webhook)
 - Slack: `https://api.mug.work/inbound/slack/<workspace>` (set as Slack request URL)
 
+**Inbound SMS requires BYOK.** Platform SMS numbers are outbound-only. To receive inbound SMS, bring your own Twilio or Telnyx number and point its webhook to `https://api.mug.work/inbound/sms/<workspace>`. The route auto-detects the provider (Twilio sends form-encoded, Telnyx sends JSON).
+
 ### Inbound SMS
 
-Workflow receives Twilio webhook data as params:
+Workflow receives webhook data as params (normalized across providers):
 
 ```typescript
 workflow("handle-sms-reply", async (ctx) => {
@@ -1522,27 +1593,15 @@ Deployed to R2 on `mug deploy`. In dev, `localhost:8787/` reads from `surfaces/_
 
 ## Workspace Files and Databases
 
-Two top-level directories manage workspace data. Both have a `.remote` manifest that tracks what exists in production.
+Two top-level directories manage workspace data. A unified manifest at `.mug/manifest.json` tracks what exists in production — deployed source definitions, uploaded files, and database schemas.
 
 ### files/
 
 Static files synced to R2 — assets, templates, CSVs, images. Drop a file here and run `mug push` to upload it to production. Workflows access files at runtime via `ctx.file()` / `ctx.fileText()`.
 
-The `.remote` manifest (`files/.remote`) tracks production state:
-
-```json
-{
-  "synced_at": "2026-05-14T10:30:00",
-  "files": {
-    "logo.png": { "size": 24580, "sha256": "a1b2c3...", "updated_at": "2026-05-13T08:00:00" },
-    "templates/invoice.html": { "size": 3200, "sha256": "d4e5f6...", "updated_at": "2026-05-14T09:15:00" }
-  }
-}
-```
-
 ### databases/
 
-Local SQLite files synced to production Durable Objects. `.db` files are gitignored — the `.remote` manifest tracks what exists in production including full table schemas.
+Local SQLite files synced to production Durable Objects. `.db` files are gitignored — the manifest tracks what exists in production including full table schemas.
 
 The optional `databases/databases.json` file provides descriptions for databases (tracked in git):
 
@@ -1555,38 +1614,46 @@ The optional `databases/databases.json` file provides descriptions for databases
 
 Descriptions appear in `mug databases`, the workspace explorer, and the CLI landing screen.
 
-The `.remote` manifest (`databases/.remote`) tracks production state:
+### .mug/manifest.json
+
+The unified manifest tracks production state for all workspace artifacts — deployed source files, uploaded files, and database schemas:
 
 ```json
 {
   "synced_at": "2026-05-14T10:30:00",
+  "definitions": {
+    "workflows/daily-report.ts": { "sha256": "a1b2c3...", "deployed_at": "2026-05-14T09:00:00" },
+    "connectors/hubspot.ts": { "sha256": "d4e5f6...", "deployed_at": "2026-05-14T09:00:00" }
+  },
+  "files": {
+    "logo.png": { "size": 24580, "sha256": "a1b2c3...", "updated_at": "2026-05-13T08:00:00" }
+  },
   "databases": {
     "crm": {
       "size_mb": 12.4,
       "tables": {
         "contacts": {
-          "columns": [
-            { "name": "id", "type": "INTEGER" },
-            { "name": "email", "type": "TEXT" },
-            { "name": "name", "type": "TEXT" }
-          ],
+          "columns": [{ "name": "id", "type": "INTEGER" }, { "name": "email", "type": "TEXT" }],
           "row_count": 3420
         }
       },
       "updated_at": "2026-05-14T09:00:00"
     }
-  }
+  },
+  "sources": ["workflows/daily-report.ts", "connectors/hubspot.ts"]
 }
 ```
+
+The `definitions` section enables drift detection — `mug status` compares local file sha256 hashes against deployed hashes to show which files have been modified since the last deploy.
 
 ### Sync behavior
 
 - `mug deploy` archives source files (connectors, workflows, surfaces, agents, config) to R2 alongside the bundle
 - `mug push` uploads local files/databases to production; `mug pull` downloads remote files/databases and source files
 - `mug dev` and `mug update` repair missing directories and manifests automatically
-- Files not in `.remote` but present locally are uploaded on next `mug push`
-- Files in `.remote` but not present locally are remote-only — accessible via `ctx.file()` at runtime
-- `.remote` is tracked in git so all collaborators see what exists in production
+- Files in the manifest but not present locally are remote-only — accessible via `ctx.file()` at runtime
+- `.mug/manifest.json` is tracked in git so all collaborators see what exists in production
+- `mug deploy --dry-run` shows what would change without deploying
 
 ## CLI Quick Reference
 
@@ -1622,13 +1689,19 @@ The `.remote` manifest (`databases/.remote`) tracks production state:
 | `mug dev --port <port>` | Pin to a specific port |
 | `mug dev --tunnel` | Expose via Cloudflare Quick Tunnel (requires `cloudflared`) |
 | `mug shutdown` | Gracefully stop the running dev server (writes back databases) |
-| `mug run <workflow>` | Execute workflow locally |
-| `mug run <workflow> --production` | Execute in production (creates CF Workflow instance) |
+| `mug run <workflow>` | Execute workflow (auto-routes: dev server → production if deployed) |
+| `mug run <workflow> --cloud` | Run in production (alias: `--production`) |
+| `mug run <workflow> --local` | Force local dev server execution |
 | `mug run <workflow> --port <n>` | Override dev server port |
-| `mug status <workflow> <instanceId>` | Check production workflow status |
-| `mug status <workflow> <instanceId> --json` | JSON output |
-| `mug logs [workflow]` | View execution history (tries dev, falls back to production) |
-| `mug logs [workflow] --production` | Force production logs |
+| `mug invoke <name> "<goal>"` | One-shot agent invocation (auto-routes: dev server → production) |
+| `mug invoke <name> "<goal>" --cloud` | Invoke in production (deployed agent) |
+| `mug invoke <name> "<goal>" --local` | Force local dev server |
+| `mug chat <name>` | Start interactive chat session with an agent |
+| `mug status` | Workspace drift summary + schedule health |
+| `mug status <workflow> <instanceId>` | Check production workflow instance status |
+| `mug logs [workflow]` | View execution history (defaults to cloud if deployed) |
+| `mug logs [workflow] --cloud` | Force production logs (alias: `--production`) |
+| `mug logs [workflow] --local` | Force local dev server logs |
 | `mug logs <workflow> --limit <n>` | Show more entries (default: 10) |
 | `mug logs <workflow> --json` | JSON output |
 | `mug sql <database> <sql>` | Run SQL against `databases/<database>.db` (no dev server needed) |
@@ -1656,7 +1729,7 @@ The `.remote` manifest (`databases/.remote`) tracks production state:
 | `mug connector scaffold --slug <name>` | Generate TypeScript source from enriched spec |
 | `mug connector init <product>` | Full pipeline: discover → gather → verify → scaffold |
 | `mug connector search <query>` | Search community connector catalog |
-| `mug connector pull --slug <name>` | Download connector spec from catalog |
+| `mug connector clone --slug <name>` | Clone connector from catalog (spec + scaffold) |
 
 ### Forms
 
@@ -1735,7 +1808,9 @@ The `.remote` manifest (`databases/.remote`) tracks production state:
 mug secret set MUG_API_KEY=<your-key>    # one-time setup
 mug dev                                   # test locally
 mug validate                              # check for issues
+mug deploy --dry-run                      # preview what would change
 mug deploy                                # deploy to production
-mug run <workflow> --production           # trigger in production
-mug status <workflow> <instanceId>        # check status
+mug run <workflow> --cloud                # trigger in production
+mug status                                # check drift + schedule health
+mug status <workflow> <instanceId>        # check instance status
 ```

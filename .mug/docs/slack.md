@@ -264,6 +264,23 @@ The command detects existing state — it only asks for what's missing. Run it m
 
 To manually set tokens without the interactive flow: `mug slack token --access-token xoxb-... --refresh-token xoxe-...`
 
+### Expired config tokens
+
+Config tokens have a 12-hour expiry. `mug deploy` rotates them automatically on each deploy. If too much time passes between deploys, both the access and refresh tokens expire. Symptoms:
+
+- `mug deploy` fails with: `Slack deploy failed: {"status":"update_failed","error":"invalid_auth"}`
+- Followed by: `Config token expired — run mug slack setup to refresh.`
+
+Fix: run `mug slack setup` — it validates the stored token and prompts for a fresh one if expired.
+
+**Non-interactive environments:** `mug slack setup` requires terminal input for token entry. When run without a TTY (e.g., by an AI coding agent), it prints the command the user should run and exits:
+
+```
+Config token has expired. Run this command in a terminal to refresh:
+
+  cd /path/to/workspace && mug slack setup
+```
+
 ### After setup
 
 1. `mug deploy` — pushes the manifest and syncs credentials to production
@@ -338,6 +355,48 @@ See `.mug/docs/api.md` for full signatures.
 - `ctx.notify.slack({ to, message, blocks?, thread_ts? })` — send Block Kit messages. `to` accepts `#channel-name`, `channel-name`, or channel ID (`C...`). Names are resolved automatically. Bot auto-joins public channels; private channels require manual invite via Integrations tab.
 - `ctx.slack.updateMessage({ channel, ts, text?, blocks? })` — update a message after interaction
 - `ctx.slack.openModal({ triggerId, view })` — open a modal from a slash command or shortcut
+- `ctx.slack.updateModal({ viewId, view })` — update an open modal for multi-step flows. `viewId` from `ctx.params.viewId` in a `view_submission` handler.
+- `ctx.slackApiCall(method, body)` — call any Slack Web API method directly
+
+## Modal Forms
+
+Modals collect structured input from users. Open from slash commands or shortcuts, handle submission in the same workflow.
+
+### Submission params
+
+When a user submits a modal with `callback_id: "mug:<workflow>:<action>"`, the workflow receives:
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `ctx.params.type` | `"view_submission"` | Distinguishes from slash_command and block_actions |
+| `ctx.params.actionId` | string | The `<action>` part from the callback_id |
+| `ctx.params.formValues` | object | Nested `{ block_id: { action_id: { value, selected_option } } }` |
+| `ctx.params.metadata` | string | The `private_metadata` from the modal (stash context here) |
+| `ctx.params.viewId` | string | For `ctx.slack.updateModal()` |
+| `ctx.params.userId` | string | Who submitted |
+| `ctx.params.userName` | string | Display name |
+| `ctx.params.triggerId` | string | For chaining modals |
+
+### Dynamic select menus
+
+For dropdowns over large datasets, use `external_select` blocks and configure a `suggestions` mapping in `slack.json`:
+
+```json
+{
+  "suggestions": {
+    "customer-picker": {
+      "database": "crm",
+      "query": "SELECT name, id FROM customers WHERE name LIKE ? AND _mug_deleted_at IS NULL LIMIT 20"
+    }
+  }
+}
+```
+
+- The `action_id` on the `external_select` block must match the key in `suggestions`
+- The user's typed text is passed as a `%value%` LIKE parameter
+- First column = display text, second column = value sent on submission
+- Set `min_query_length: 1` on the block to require at least 1 character before searching
+- For small option sets (under 100), use `static_select` instead — no config needed
 
 ## Slack Data
 

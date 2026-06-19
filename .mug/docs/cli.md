@@ -30,9 +30,9 @@ my-client/
 ├── agents/               # AI agent configs
 ├── surfaces/             # form and portal JSON configs
 ├── files/                # static files synced to R2 (assets, templates, CSVs)
-│   └── .remote           # manifest of production files
 ├── databases/            # local SQLite files synced to production DOs (.db gitignored)
-│   └── .remote           # manifest of production databases
+├── .mug/
+│   └── manifest.json     # unified manifest — deployed definitions, files, databases
 ├── package.json
 └── .gitignore
 ```
@@ -63,8 +63,8 @@ What it does:
 - **Instruction files** — regenerates the `mug:start`/`mug:end` block in CLAUDE.md, AGENTS.md, .cursor/rules/mug.mdc
 - **Skills** — syncs .claude/skills/, .agents/skills/, .cursor/rules/ from CLI templates
 - **Docs** — syncs .mug/docs/ platform reference documentation
-- **Scaffolding** — creates missing directories (`files/`, `databases/`, `agents/`, etc.) with `.remote` manifests
-- **Remote manifests** — fetches production state (files, databases, deployed source files) into local manifests so you can see what exists remotely vs locally
+- **Scaffolding** — creates missing directories (`files/`, `databases/`, `agents/`, etc.) and `.mug/manifest.json`
+- **Remote manifest** — fetches production state (deployed definitions, files, databases) into `.mug/manifest.json` so you can see what exists remotely vs locally
 
 Output: `Synced 2 instruction files, 6 skills, 4 docs`
 
@@ -78,7 +78,7 @@ mug pull databases/crm                     # download a database as .db
 mug pull --all                             # download everything remote
 ```
 
-Files are written to `files/` and databases to `databases/`. The `.remote` manifest is updated after each pull. Existing local databases are backed up before overwrite.
+Files are written to `files/` and databases to `databases/`. The unified manifest (`.mug/manifest.json`) is updated after each pull. Existing local databases are backed up before overwrite.
 
 ### mug push
 
@@ -91,7 +91,7 @@ mug push --all                             # upload all local files and database
 mug push --json                            # JSON output (uploaded/errors arrays)
 ```
 
-Reads from `databases/*.db` and `files/`, uploads to production DOs and R2. The `.remote` manifest is updated after each push.
+Reads from `databases/*.db` and `files/`, uploads to production DOs and R2. The unified manifest (`.mug/manifest.json`) is updated after each push.
 
 ### mug login
 
@@ -163,6 +163,37 @@ List workflows in this workspace. Shows name and description from the workflow's
 
 List agents in this workspace. Shows name and description (or model) from `agent.json`.
 
+### mug invoke \<name\> "\<goal\>"
+
+One-shot agent invocation — send a goal, get a response, done. Auto-routes: tries local dev server first, falls back to production if deployed.
+
+**Options:**
+- `--cloud` — invoke in production (deployed agent)
+- `--local` — force local dev server execution
+- `--port <n>` — override port auto-detection
+
+**Examples:**
+```bash
+mug invoke invoice-bot "Analyze overdue invoices from last 30 days"
+mug invoke support-bot "What's our average response time?" --cloud
+```
+
+The agent runs autonomously (multiple turns with tools), returns structured results, and updates its brain memory if `memory: true` is set in `agent.json`.
+
+### mug chat \<name\>
+
+Start an interactive chat session with an agent. Messages are sent back and forth in a persistent conversation. The agent retains context across messages within the session. Ctrl+C to exit.
+
+**Options:**
+- `--cloud` — chat via production (deployed agent)
+
+**Examples:**
+```bash
+mug chat support-bot
+```
+
+Chat sessions use a per-session Durable Object. The close phase (journal + mantra) runs automatically 15 minutes after the last message.
+
 ### mug surfaces
 
 List surfaces in this workspace. Shows name, type (form/portal), and description from the surface JSON.
@@ -211,31 +242,39 @@ Shows the production URLs for webhook-triggered workflows, inbound SMS/email/Sla
 
 ### mug run \<workflow\>
 
-Execute a workflow.
+Execute a workflow. Auto-routes: uses local dev server if running, otherwise production if workspace is deployed.
 
 ```bash
-mug run invoice-followup              # run locally
-mug run invoice-followup --production # run in production (Cloudflare Workflows)
+mug run invoice-followup              # auto-route (dev server → production → error)
+mug run invoice-followup --cloud      # run in production (Cloudflare Workflows)
+mug run invoice-followup --local      # force local dev server execution
+mug run invoice-followup --production # alias for --cloud
 ```
 
 Local runs execute synchronously and print step-by-step output. Production runs create a Cloudflare Workflow instance and return an instance ID.
 
-### mug status \<workflow\> \<instanceId\>
+### mug status
 
-Check the status of a production workflow instance.
+Show workspace drift summary and schedule health (no arguments), or check a specific workflow instance.
 
 ```bash
-mug status invoice-followup inv-followup-1234567890-abc123
+mug status                           # drift summary: synced/diverged/local-only/remote-only + schedule health
+mug status --json                    # structured JSON output
+mug status invoice-followup inv-123  # check production workflow instance status
 ```
+
+The no-args form compares local source files against `.mug/manifest.json` definitions (sha256 hashes) to show which files have changed since the last deploy. Also fetches schedule health showing last run time, status, and next fire time for each scheduled workflow and source.
 
 ### mug logs [workflow]
 
-View workflow execution history. Automatically tries the local dev server first; if no dev server is running, fetches production logs.
+View workflow execution history. Defaults to production when workspace is deployed; falls back to local dev server otherwise.
 
 ```bash
-mug logs                             # all recent runs (dev or production)
+mug logs                             # all recent runs (auto-routed)
 mug logs invoice-followup            # runs of a specific workflow
-mug logs --production                # force production logs (skip dev server check)
+mug logs --cloud                     # force production logs
+mug logs --local                     # force local dev server logs
+mug logs --production                # alias for --cloud
 mug logs invoice-followup --limit 20 # more entries
 mug logs --json                      # JSON output for scripting
 ```
@@ -372,15 +411,15 @@ mug connector search "crm" --json
 
 Returns matching connectors with endpoint count, quality level, and auth type.
 
-### mug connector pull
+### mug connector clone
 
-Download a connector spec from the community catalog into your workspace.
+Clone a connector from the community catalog into your workspace (spec + scaffold).
 
 ```bash
-mug connector pull --slug hubspot
+mug connector clone --slug hubspot
 ```
 
-Saves to `connectors/.specs/<slug>/`. From there, run `mug connector verify` or `mug connector scaffold`.
+Saves to `connectors/.specs/<slug>/`. From there, run `mug connector verify` or `mug connector scaffold`. `mug connector pull` is an alias for `clone`.
 
 ## Issues
 
@@ -680,7 +719,7 @@ mug brain dispatch-bot sessions     # session history across workflows
 mug brain dispatch-bot search <q>   # search the brain by keyword
 ```
 
-Reads the local `agents/<name>/BRAIN.db`. Run `mug pull` to download runtime brain data from production.
+Reads the local `agents/<name>/BRAIN.db`. If no local BRAIN.db exists and the workspace is deployed, automatically falls back to the cloud API to display production brain data (mantra, logs, journal). Run `mug pull` to download the full brain locally.
 
 ## Deployment
 
@@ -691,9 +730,10 @@ Bundle workspace code and deploy to Cloudflare Workers.
 ```bash
 mug deploy
 mug deploy --json         # structured JSON output
+mug deploy --dry-run      # show what would change without deploying
 ```
 
-Requires `MUG_API_KEY` in `.mug/secrets`. Bundles TypeScript, validates, creates/updates the Worker with correct bindings, and uploads secrets.
+Requires `MUG_API_KEY` in `.mug/secrets`. Bundles TypeScript, validates, creates/updates the Worker with correct bindings, and uploads secrets. The `--dry-run` flag compares local source files against the manifest to show which files are new, modified, or removed since the last deploy.
 
 ### mug validate
 

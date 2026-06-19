@@ -22,7 +22,8 @@ Shared skills: `agents/shared-skills/<skill-name>/SKILL.md`
   "tools": ["query", "search", "notify"],
   "memory": true,
   "caps": { "maxTurns": 30, "maxCredits": 200, "maxDuration": 300 },
-  "requireApproval": ["notify"]
+  "requireApproval": ["notify"],
+  "chat": true
 }
 ```
 
@@ -42,6 +43,15 @@ const result = await ctx.agent("invoice-analyzer", {
 // result: { response, output?, usage: { credits, turns, duration }, capped?, cappedReason? }
 ```
 
+## Test from CLI
+
+```bash
+mug invoke <name> "your goal or question"         # one-shot invocation (auto-routes: dev server → production)
+mug invoke <name> "your goal or question" --cloud  # force production
+mug invoke <name> "your goal or question" --local   # force dev server
+mug chat <name>                                    # interactive chat session (Ctrl+C to exit)
+```
+
 ## Tool grants
 
 - `query` — read-only SQL against workspace databases
@@ -52,21 +62,25 @@ const result = await ctx.agent("invoice-analyzer", {
 - `workspace` — read/write workspace files
 - `ai` — sub-AI calls for classify/extract/summarize (credits count against caps)
 - `trigger_workflow` — trigger other workflows (requires `workflows` allowlist in agent.json)
-- `custom:<name>` — custom tools defined in SOUL.md
 
 ## Brain memory
 
-When memory is configured, the agent gets 4 tools automatically:
-- `remember(content, entity?)` — store facts, upsert entities
-- `recall(query)` — search memory for entities, facts, struggles
-- `log_outcome(action, result, effective?)` — track action effectiveness
-- `flag_struggle(category, description)` — signal knowledge gaps or edge cases
+When `memory: true`, the agent gets three tables in BRAIN.db:
+- **logs** — session narratives and struggles
+- **journal** — end-of-session reflections written when the agent learns something noteworthy
+- **mantra** — single-row narrative the agent maintains as its self-authored soul
+
+The agent gets 2 tools automatically:
+- `struggle(description)` — signal knowledge gaps for admin review
+- `recall(query)` — search memory across logs, journal, and mantra
 
 Auto-detected struggles (no agent action needed): cap hits, approval rejections, fallback responses.
 
-Session-start digest: entity summaries, recent facts, unresolved struggles, effectiveness stats.
+At session start, the agent receives SOUL.md + its mantra + skill registry in the system prompt.
 
-Admin reviews brain via `mug brain <agent-name> struggles`.
+At session end, the harness runs a 3-step close phase: (1) session log summary, (2) optional journal entry, (3) optional mantra update.
+
+Admin reviews brain via `mug brain <agent-name>`.
 
 ## Approval flow
 
