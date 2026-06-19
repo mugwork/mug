@@ -36,7 +36,7 @@ Based on the user's description, decide:
    - `ai` — sub-AI calls for classify/extract/summarize within a turn
    - `trigger_workflow` — trigger other workflows (requires `workflows` allowlist in config)
 4. **Workflows** — when using `trigger_workflow`, list the allowed workflow names in `workflows: [...]`
-5. **Memory** — `true` to enable brain (logs, journal, mantra). When enabled, the agent gets `remember`, `track`, `struggle`, and `recall` tools, plus a harness that prompts for journal/mantra updates at session end.
+5. **Memory** — `true` to enable brain (logs, journal, mantra). When enabled, the agent gets `struggle` and `recall` tools, plus a 3-step close phase at session end (session log → journal → mantra).
 6. **Caps** — `maxTurns` (default 50), `maxCredits` (default 500), `maxDuration` (default 300s)
 7. **Approval** — which tools need human approval before execution
 8. **Chat** — `true` to make the agent conversational via Slack DMs. Auto-wires messagesTab on the Slack app. Each user gets a persistent session — the agent remembers context across messages
@@ -190,13 +190,21 @@ const result = await ctx.agent("dispatcher", {
 
 The agent queries the database, understands the situation, and triggers the appropriate workflow with context about why it chose that route. The triggered workflow gets its own run, own operation cap, and own log entry.
 
-## Step 6 — Deploy and verify
+## Step 6 — Deploy and test
 
 ```bash
 mug deploy
 ```
 
 Deploy validates agent.json, writes SOUL.md + skills to the agent runtime, and creates an empty BRAIN.db on first deploy.
+
+Test the agent from the CLI:
+```bash
+mug invoke <name> "your goal or question"         # one-shot invocation (auto-routes: dev server → production)
+mug invoke <name> "your goal or question" --cloud  # force production
+mug invoke <name> "your goal or question" --local   # force dev server
+mug chat <name>                                    # interactive chat session (Ctrl+C to exit)
+```
 
 After the agent runs, pull its brain to see what it learned:
 ```bash
@@ -207,13 +215,11 @@ cat agents/<name>/MANTRA.md         # read the agent's self-authored narrative
 ## Brain memory
 
 When `memory: true`, the agent gets three tables in BRAIN.db:
-- **logs** — operational records (facts, outcomes, struggles) written via tools during sessions
+- **logs** — session narratives and struggles
 - **journal** — end-of-session reflections written when the agent learns something noteworthy
 - **mantra** — single-row narrative the agent maintains as its self-authored soul
 
-The agent gets 4 tools automatically:
-- `remember(content, entity?)` — store facts about people/companies/patterns
-- `track(action, result, worked?)` — record what the agent did and whether it worked
+The agent gets 2 tools automatically:
 - `struggle(description)` — signal knowledge gaps for admin review
 - `recall(query)` — search memory across logs, journal, and mantra
 
@@ -223,11 +229,12 @@ The brain also auto-detects struggles: cap hits, approval rejections, and fallba
 
 At session start, the agent receives SOUL.md + its mantra + skill registry in the system prompt.
 
-At session end, the harness prompts the agent to:
-1. Consider writing a journal entry (if it learned something)
-2. Consider updating its mantra (if its understanding changed)
+At session end, the harness runs a 3-step close phase:
+1. Summarize what you worked on (session log — always written)
+2. Consider writing a journal entry (if it learned something)
+3. Consider updating its mantra (if its understanding changed)
 
-Both are forced considerations, not forced writes — the agent decides.
+Step 1 is always written. Steps 2 and 3 are forced considerations, not forced writes — the agent decides.
 
 ### MANTRA.md
 

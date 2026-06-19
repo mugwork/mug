@@ -105,7 +105,7 @@ return { skipped: true };
 - `ctx.search(query, { source?, limit? })` — semantic search across synced data. Returns `{ score, table, primaryKey, row }[]`. Requires deployed workspace.
 - `ctx.ask(question, { source?, limit?, model?, system? })` — full RAG: searches data, feeds to LLM, returns `{ answer, sources, usage }`. Requires deployed workspace.
 
-Drop files in the `files/` directory and run `mug push` to upload them to production. Check `files/.remote` for what's available remotely.
+Drop files in the `files/` directory and run `mug push` to upload them to production. Check `.mug/manifest.json` for what's available remotely.
 
 Every `ctx.*` call is automatically logged with timing, input/output, and token usage.
 

@@ -166,17 +166,13 @@ When `memory: true`, the agent gets a persistent memory system backed by BRAIN.d
 
 | Table | Purpose | Written by |
 |-------|---------|-----------|
-| **logs** | Operational records — facts, outcomes, struggles | Agent (via tools) + harness (auto-detected) |
+| **logs** | Session narratives and struggles | Agent (via tools) + harness (auto-detected) |
 | **journal** | End-of-session reflections — insights, patterns, hypotheses | Agent (harness-prompted) |
 | **mantra** | Single-row self-authored narrative — synthesized self-knowledge | Agent (harness-prompted) |
 
 ### Memory tools
 
 When memory is enabled, the agent gets these tools automatically:
-
-**`remember(content, entity?)`** — Store a fact. Optionally name the person, company, or thing it's about.
-
-**`track(action, result, worked?)`** — Record what the agent did and what happened. The `worked` flag tracks effectiveness.
 
 **`struggle(description)`** — Flag something the agent couldn't do or didn't know. The admin reviews these to improve skills and instructions.
 
@@ -199,17 +195,18 @@ The harness enforces a session lifecycle on every agent invocation:
 1. SOUL.md injected into system prompt (agent can't skip it)
 2. Mantra injected after SOUL.md (agent's self-knowledge from prior sessions)
 3. Skill registry appended (names + descriptions, loaded on demand)
-4. Brain tools enabled (remember, track, struggle, recall)
+4. Brain tools enabled (struggle, recall)
 
 **Mid-session:**
-- Agent uses tools as needed — brain tools for memory, granted tools for work
+- Agent uses tools as needed — brain tools for flagging gaps, granted tools for work
 - Auto-struggle detection on cap hits, corrections, fallbacks
 
-**Session end (close phase):**
-1. Harness prompts: "Did you learn anything worth journaling?" → agent writes a journal entry or skips
-2. Harness prompts: "Review your mantra — still accurate?" → agent updates mantra or skips
+**Session end (close phase — 3 steps):**
+1. Harness prompts: "Summarize what you worked on" → agent writes a session log (always written)
+2. Harness prompts: "Did you learn anything worth journaling?" → agent writes a journal entry or skips
+3. Harness prompts: "Review your mantra — still accurate?" → agent updates mantra or skips
 
-Both prompts are forced considerations, not forced writes. The agent decides whether to write. If the agent is at its cap, the close phase is skipped (auto-struggle logged).
+Steps 2 and 3 are forced considerations, not forced writes. The agent decides whether to write. If the agent is at its cap, the close phase is skipped (auto-struggle logged).
 
 ### Admin workflow
 

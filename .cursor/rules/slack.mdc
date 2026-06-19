@@ -12,7 +12,9 @@ alwaysApply: false
 - `ctx.notify.slack({ to, message, blocks?, thread_ts? })` — send messages
 - `ctx.slack.updateMessage({ channel, ts, text?, blocks? })` — update messages after actions
 - `ctx.slack.openModal({ triggerId, view })` — open modals from slash commands
-- Action ID convention: `mug:<workflow>:<action>` routes button clicks to workflows
+- `ctx.slack.updateModal({ viewId, view })` — update open modals (multi-step flows)
+- Modal submission: `ctx.params.formValues` (form data), `ctx.params.metadata` (private_metadata), `ctx.params.viewId`
+- Action ID convention: `mug:<workflow>:<action>` routes button clicks and modal submissions to workflows
 - `ctx.waitForUrl("event")` — generates callback URLs for approval buttons
 
 ## slack.json Configuration
@@ -83,6 +85,48 @@ await ctx.slack.updateMessage({
 });
 ```
 
+**Modal forms — open from slash command, handle submission in same workflow:**
+```typescript
+workflow("create-job", async (ctx) => {
+  if (ctx.params.type === "slash_command") {
+    await ctx.slack.openModal({
+      triggerId: ctx.params.triggerId,
+      view: {
+        type: "modal",
+        callback_id: "mug:create-job:submit",
+        private_metadata: JSON.stringify({ channelId: ctx.params.channelId }),
+        title: { type: "plain_text", text: "New Job" },
+        submit: { type: "plain_text", text: "Create" },
+        blocks: [
+          { type: "input", block_id: "title_block", label: { type: "plain_text", text: "Title" },
+            element: { type: "plain_text_input", action_id: "title" } },
+          { type: "input", block_id: "priority_block", label: { type: "plain_text", text: "Priority" },
+            element: { type: "static_select", action_id: "priority", options: [
+              { text: { type: "plain_text", text: "Low" }, value: "low" },
+              { text: { type: "plain_text", text: "High" }, value: "high" },
+            ] } },
+        ],
+      },
+    });
+  }
+  if (ctx.params.type === "view_submission") {
+    const v = ctx.params.formValues;
+    const title = v?.title_block?.title?.value;
+    const priority = v?.priority_block?.priority?.selected_option?.value;
+    const meta = JSON.parse(ctx.params.metadata || "{}");
+    await ctx.notify.slack({ to: meta.channelId, message: `Job created: ${title} (${priority})` });
+  }
+}, { trigger: { type: "slack_command", command: "/newjob", description: "Create a job" } });
+```
+
+**Dynamic select menus** — for large datasets (100+ options), use `external_select` + `suggestions` in slack.json:
+```json
+{ "suggestions": { "customer-picker": { "database": "crm", "query": "SELECT name, id FROM customers WHERE name LIKE ? LIMIT 20" } } }
+```
+Action_id on the select block must match the key. User's typed text passed as `%value%` LIKE param. First column = display, second = value.
+
+**Update modal (multi-step):** `await ctx.slack.updateModal({ viewId: ctx.params.viewId, view: { ... } })`
+
 **Home Tab sections:** query (run SQL → table), actions (buttons → workflows), text (header + markdown), divider.
 
 **Slack data (auto-synced):** `slack_users` (user_id, email, display_name), `slack_channels` (channel_id, name)
@@ -97,6 +141,8 @@ Run `mug slack setup` to create the Slack app and store credentials. Interactive
 Both paths store config token for auto-update on future `mug deploy`. Setup detects existing state — only asks for missing pieces.
 
 After setup: `mug deploy` (push manifest) → share install URL → bot token auto-stored on OAuth callback.
+
+**Expired config tokens:** Config tokens expire if not rotated between deploys. `mug deploy` fails with `invalid_auth` and prints: `Config token expired — run mug slack setup to refresh.` The `mug slack setup` command validates tokens and prompts for fresh ones. **This command requires interactive terminal input — do not run it as an AI agent.** Instead, tell the user to run: `cd <workspace-path> && mug slack setup`
 
 ## AI Agent DMs (Agents & AI Apps)
 

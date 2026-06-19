@@ -1,6 +1,6 @@
 # Notifications — Full API Reference
 
-Send email and SMS notifications from workflows. Mug handles delivery via Resend (email) and Twilio (SMS), renders styled HTML email templates, and generates correct surface URLs for dev and production.
+Send email and SMS notifications from workflows. Mug handles delivery via Resend (email) and Twilio or Telnyx (SMS), renders styled HTML email templates, and generates correct surface URLs for dev and production. SMS requires BYOK credentials.
 
 For a guided walkthrough, use the `/notify` skill. For full `ctx.notify.*` method signatures and error behavior, see [api.md — notifications](api.md#ctxnotifyemailoptions).
 
@@ -92,7 +92,7 @@ await ctx.notify.email({
 
 ## ctx.notify.sms(options)
 
-Send an SMS message via Twilio.
+Send an SMS message via Twilio or Telnyx. Provider is auto-selected based on workspace secrets — Telnyx preferred when both configured.
 
 ```typescript
 await ctx.notify.sms({
@@ -140,7 +140,7 @@ ctx.surfaceUrl("portal", `/row/${id}`)   // → .../portal/row/42
 In local dev (`mug dev`), notifications send via real delivery services:
 
 - **Email**: sends via Resend using the `RESEND_API_KEY` from `.mug/secrets`. Real emails arrive in the recipient's inbox.
-- **SMS**: sends via Twilio using configured credentials from `.mug/secrets`.
+- **SMS**: sends via Twilio or Telnyx using configured credentials from `.mug/secrets`.
 
 ### Dev email redirect
 
@@ -174,20 +174,29 @@ Mug-managed sends count against your plan's notification limits:
 | Pro ($299) | 5,000 | 1,000 |
 | Business ($599) | 15,000 | 2,500 |
 
-BYOK sends (using your own Resend/Twilio keys) bypass metering entirely.
+BYOK sends (using your own Resend/Twilio/Telnyx keys) bypass metering entirely.
 
 ## BYOK — bring your own keys
 
-Use your own Resend or Twilio account for unlimited sends, custom sending domains, and your own deliverability reputation.
+Use your own Resend, Twilio, or Telnyx account for unlimited sends, custom sending domains, and your own deliverability reputation. **SMS requires BYOK** — platform SMS numbers are pending carrier approval.
 
 ```bash
+# Email
 mug secret set RESEND_API_KEY=re_xxxxx
+
+# SMS — Option A: Telnyx (preferred, lower cost)
+mug secret set TELNYX_API_KEY=KEY...
+mug secret set TELNYX_PHONE_NUMBER=+1xxxxx
+
+# SMS — Option B: Twilio
 mug secret set TWILIO_ACCOUNT_SID=AC_xxxxx
 mug secret set TWILIO_AUTH_TOKEN=xxxxx
 mug secret set TWILIO_PHONE_NUMBER=+1xxxxx
 ```
 
-When BYOK keys are set, notifications route through your account instead of Mug's. Your keys, your bill, unlimited volume.
+When BYOK keys are set, notifications route through your account instead of Mug's. Your keys, your bill, unlimited volume. When both Telnyx and Twilio are configured, Telnyx is preferred.
+
+**Inbound SMS (bidirectional):** Platform SMS numbers are outbound-only. To receive inbound SMS replies, bring your own number and point the provider's webhook to `https://api.mug.work/inbound/sms/<workspace>`. The route auto-detects Twilio (form-encoded) vs Telnyx (JSON).
 
 ## Branding
 
@@ -212,8 +221,10 @@ No code changes needed — `ctx.notify.email()` reads branding from the workspac
 ## CLI commands
 
 ```bash
-mug secret set RESEND_API_KEY=re_xxxxx     # configure email delivery
-mug secret set TWILIO_ACCOUNT_SID=AC_xxxxx # configure SMS delivery
+mug secret set RESEND_API_KEY=re_xxxxx       # configure email delivery
+mug secret set TELNYX_API_KEY=KEY...         # configure SMS via Telnyx (preferred)
+mug secret set TELNYX_PHONE_NUMBER=+1xxxxx   # Telnyx sending number
+mug secret set TWILIO_ACCOUNT_SID=AC_xxxxx   # configure SMS via Twilio (alternative)
 mug secret list                            # verify keys are set
 mug dev                                    # test notifications locally
 mug run <workflow>                         # trigger workflow to send

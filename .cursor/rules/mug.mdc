@@ -20,6 +20,7 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 - `import { source } from "@mugwork/mug"` — read-only sync: `source({ name, database, tables: [{ name, primaryKey, fetch(ctx) }] })`
 - `import { connector } from "@mugwork/mug"` — bidirectional: `connector({ name, database, tables: [{ name, primaryKey, fetch(ctx), get(ctx, id), actions: { create(ctx, fields), update(ctx, id, fields), delete(ctx, id) } }] })`
 - `ctx.credential(name?)` — returns API key/token from workspace secrets
+- `ctx.fetch(url, init?)` — fetch wrapper that routes through internal service bindings. **Use instead of raw `fetch()`** in connector callbacks — identical for external APIs, avoids connectivity issues (CF error 1019) when calling platform endpoints in production.
 - Place connector files in `connectors/` — auto-discovered by `mug deploy`
 - Trigger sync: `curl -X POST http://localhost:8787/sync/my-api`
 
@@ -63,17 +64,20 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 
 **Notifications** — email and SMS from workflows (use `/notify` skill for guided setup):
 - `ctx.notify.email({ to, message, subject?, fromName?, cta?: { label, url } })` — styled HTML email with optional CTA button
-- `ctx.notify.sms({ to, message })` — SMS via Twilio (E.164 format)
+- `ctx.notify.sms({ to, message })` — SMS via Twilio or Telnyx (E.164 format). **BYOK required** — set `TELNYX_API_KEY` + `TELNYX_PHONE_NUMBER` or `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` + `TWILIO_PHONE_NUMBER` via `mug secret set`. Telnyx preferred when both configured.
 - `ctx.surfaceUrl("approvals")` — returns correct URL for dev (`localhost:8787`) or prod (`workspace.mug.work`)
 - In local dev, emails send via Resend (real delivery) + console log
-- BYOK: set your own Resend/Twilio keys via `mug secret set` for unlimited sends
+- BYOK: set your own Resend/Twilio/Telnyx keys via `mug secret set` for unlimited sends. BYOK SMS and email are not metered.
 - **Usage limits**: email/SMS/AI have per-tier limits. `ctx.notify` and `ctx.ai` throw when limits are exceeded — catch in workflows to handle gracefully. Enable overages at mug.work or `mug billing --overage <meter>=on` to allow per-unit billing beyond limits. BYOK bypasses metered limits. See `.mug/docs/billing.md` for tier details.
 
 **Slack surface** — send Block Kit messages, slash commands, interactive buttons, Home Tab (use `/slack` skill for guided setup):
 - `ctx.notify.slack({ to, message, blocks?, thread_ts? })` — send messages with raw Block Kit. `to` accepts `#channel-name`, `channel-name`, or channel ID. Names resolve automatically. Bot auto-joins public channels; private channels need manual invite via Integrations tab.
 - `ctx.slack.updateMessage({ channel, ts, text?, blocks? })` — update a message after an action (replace buttons with result)
 - `ctx.slack.openModal({ triggerId, view })` — open a modal from a slash command workflow
-- Action ID convention: `mug:<workflow>:<action>` routes button clicks to specific workflows
+- `ctx.slack.updateModal({ viewId, view })` — update an open modal (multi-step flows). `viewId` from `ctx.params.viewId` in view_submission
+- Modal submission: workflow receives `ctx.params.type === "view_submission"`, `ctx.params.formValues` (nested `view.state.values`), `ctx.params.metadata` (private_metadata string), `ctx.params.viewId`
+- Dynamic select menus: use `external_select` in modal blocks + `"suggestions"` config in slack.json to map action_id → database query. See `.mug/docs/slack.md`.
+- Action ID convention: `mug:<workflow>:<action>` routes button clicks and modal submissions to specific workflows
 - Slash command trigger: `"trigger": { "type": "slack_command", "command": "/dispatch" }` in workflow config
 - Event trigger: `"trigger": { "type": "slack_event", "event": "message" }` in workflow config
 - Slack data auto-synced: `slack_users` (user_id, email, display_name) and `slack_channels` (channel_id, name) tables
@@ -85,7 +89,8 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 **Inbound messages** — receive SMS replies, email replies, Slack interactions:
 - Configure in workflow options: `workflow("handle-sms", handler, { inbound: "sms" })`
 - Webhook URLs shown after `mug deploy`: `https://api.mug.work/inbound/sms/<workspace>`, etc. Run `mug webhooks` to see all URLs.
-- SMS workflow receives: `ctx.params = { channel: "sms", from: "+1...", body: "YES", messageSid: "SM..." }`
+- **Inbound SMS requires BYOK** — platform numbers are outbound-only. Point your Twilio or Telnyx webhook to the inbound URL. Route auto-detects provider.
+- SMS workflow receives: `ctx.params = { channel: "sms", provider: "twilio"|"telnyx", from: "+1...", body: "YES", ... }`
 - Email workflow receives: `ctx.params = { channel: "email", from: "user@...", subject: "Re: ...", body: "..." }`
 - Slack workflow receives: `ctx.params = { channel: "slack", userId: "U...", actionId: "approve_btn", actionValue: "..." }`
 - **Pattern**: "send and wait for reply" uses two workflows — one sends + sets a status field in DB, the other catches the inbound reply + checks that field to determine what to do
@@ -173,10 +178,16 @@ mug dev                              # start local dev server (auto-detects port
 mug dev --port <port>                # pin to a specific port
 mug dev --tunnel                     # expose via Cloudflare Quick Tunnel (requires cloudflared)
 mug shutdown                         # gracefully stop the running dev server
-mug run <workflow>                   # run workflow locally
-mug run <workflow> --production      # run in production (CF Workflows)
-mug logs [workflow]                  # view execution log (--json, --limit N, --production)
-mug status <workflow> <instanceId>   # check production status (--json)
+mug run <workflow>                   # run workflow (auto-routes: dev server if running, else production if deployed)
+mug run <workflow> --cloud           # run in production (CF Workflows)
+mug run <workflow> --local           # force local dev server execution
+mug invoke <name> "<goal>"            # one-shot agent invocation (auto-routes: dev server → production)
+mug invoke <name> "<goal>" --cloud   # invoke in production (deployed agent)
+mug invoke <name> "<goal>" --local   # force local dev server
+mug chat <name>                      # start interactive chat session with an agent
+mug logs [workflow]                  # view execution log (--json, --limit N, --cloud, --local)
+mug status                          # workspace drift summary + schedule health (--json)
+mug status <workflow> <instanceId>   # check production workflow instance status (--json)
 mug sql <db> <sql>                   # run SQL against databases/<db>.db (--json, --production, --dev, --port) (alias: mug query)
 mug usage                            # usage across all 6 billing dimensions (--json, --period)
 mug workspace plan                   # view or change workspace plan tier (opens Stripe for paid tiers)
@@ -184,9 +195,10 @@ mug billing                              # view billing + per-meter overage sett
 mug billing --overage <meter>=on|off     # toggle overage per meter (e.g. operations=on)
 mug billing --cap <meter>=<dollars>      # set overage cap per meter (e.g. ai_credits=50)
 mug billing --notify-email <address>     # set overage notification email
-mug update                           # force-refresh instructions, skills, docs, remote manifests (auto-runs every 4h)
+mug update                           # force-refresh instructions, skills, docs, manifest (auto-runs every 4h)
 mug validate                         # check workspace for issues before deploying (--verbose, --json)
 mug deploy                           # deploy to production (includes database push + source archive) (--json)
+mug deploy --dry-run                 # show what would change without deploying
 mug push databases/<name>            # upload local database to production (--json)
 mug push --all                       # upload all local files and databases (--json)
 mug push --all --force               # push all without confirmation prompt
@@ -211,10 +223,10 @@ mug auth <provider>                  # connect provider via OAuth (e.g. airtable
 mug demo enable <surface> --as <id>  # share surface pre-auth'd (--expires, --notify, --no-workflows)
 mug demo disable <surface>           # revoke demo access
 mug demo status                      # show active demos
-mug slack setup                       # set up Slack app (interactive — creates app, stores credentials)
+mug slack setup                       # set up Slack app (interactive — REQUIRES TERMINAL, do not run as AI agent)
 mug slack token                       # set or rotate Slack bot/refresh tokens (--access-token, --refresh-token)
 mug webhooks                          # list webhook URLs, inbound channels, event triggers
-mug brain <agent>                     # inspect agent brain memory (struggles, entities, outcomes, sessions)
+mug brain <agent>                     # inspect agent brain (local BRAIN.db, falls back to cloud if missing)
 mug brain <agent> struggles           # review unresolved struggles — knowledge gaps and edge cases
 mug login                             # authenticate via email verification
 mug clone [name]                     # clone workspace from cloud (pulls source files automatically)
@@ -295,6 +307,9 @@ Full API reference with detailed examples in `.mug/docs/`:
 - `.mug/docs/cli.md` — complete CLI command reference
 - `.mug/docs/demo.md` — demo mode: notification routing, workflow suppression, ctx.isDemo
 - `.mug/docs/slack.md` — slack.json schema, Home Tab sections, shortcuts, unfurl, deploy process
+- `.mug/docs/agents.md` — agent config, SOUL.md, brain memory, tool grants, caps, approval flows
+- `.mug/docs/ai.md` — model catalog, smart routing, BYOK setup, billing precedence
+- `.mug/docs/billing.md` — tier limits, overages, per-meter caps, BYOK bypass
 
 ### Conventions
 
@@ -326,7 +341,7 @@ Shared skills available to all agents: `agents/shared-skills/<skill-name>/SKILL.
 - `model`: `"claude-sonnet"` (fixed) or `{ "fast": "claude-haiku", "balanced": "claude-sonnet", "powerful": "claude-opus" }` (dynamic routing)
 - `tools`: `["query", "search", "ask", "notify", "http", "workspace", "ai", "trigger_workflow"]`
 - `workflows`: `["invoice-followup", "escalation"]` — allowlist for trigger_workflow (agent can only trigger listed workflows)
-- `memory`: `true` — enables brain (logs, journal, mantra) + harness lifecycle + tools (remember, track, struggle, recall)
+- `memory`: `true` — enables brain (logs, journal, mantra) + harness lifecycle + tools (struggle, recall) + 3-step close phase
 - `caps`: `{ "maxTurns": 30, "maxCredits": 200, "maxDuration": 300 }`
 - `requireApproval`: `["notify"]` — pause for human approval before these tools
 - `chat`: `true` — make the agent conversational via Slack DMs (auto-enables Agents & AI Apps)
