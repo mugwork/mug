@@ -218,7 +218,7 @@ In local dev, emails redirect to `dev.email` in `mug.json` (auto-set to logged-i
 
 ### ctx.notify.sms(options)
 
-Send an SMS. Supports Twilio and Telnyx — provider is auto-selected based on which credentials are configured in workspace secrets. Telnyx is preferred when both are present.
+Send an SMS via Twilio. Works out of the box using Mug's platform number. BYOK optional for your own number.
 
 ```typescript
 async sms(options: {
@@ -229,20 +229,15 @@ async sms(options: {
 
 **Returns:** Same status strings as `ctx.notify.email()`.
 
-**SMS provider setup (BYOK):** Add your Twilio or Telnyx credentials via `mug secret set`:
+**SMS works out of the box** using Mug's platform number. **Optional BYOK** — use your own number for custom caller ID and unmetered sends:
 
 ```bash
-# Option A: Telnyx (preferred — lower cost)
-mug secret set TELNYX_API_KEY=KEY...
-mug secret set TELNYX_PHONE_NUMBER=+15551234567
-
-# Option B: Twilio
 mug secret set TWILIO_ACCOUNT_SID=AC...
 mug secret set TWILIO_AUTH_TOKEN=...
 mug secret set TWILIO_PHONE_NUMBER=+15551234567
 ```
 
-When both are configured, Telnyx is used. BYOK SMS sends are not metered against your plan's SMS limits. For inbound SMS (bidirectional), point your provider's webhook URL to `https://api.mug.work/inbound/sms/<workspace>`.
+BYOK SMS sends are not metered against your plan's SMS limits. Mug's platform number is outbound-only. For inbound SMS (bidirectional), bring your own Twilio number and point its webhook to `https://api.mug.work/inbound/sms/<workspace>`.
 
 ### ctx.notify.slack(options)
 
@@ -1247,11 +1242,11 @@ workflow("handle-slack-action", async (ctx) => { ... }, {
 ```
 
 After `mug deploy`, webhook URLs are displayed:
-- SMS: `https://api.mug.work/inbound/sms/<workspace>` (set as your Twilio or Telnyx webhook URL)
+- SMS: `https://api.mug.work/inbound/sms/<workspace>` (set as your Twilio webhook URL)
 - Email: `https://api.mug.work/inbound/email/<workspace>` (set as Resend inbound webhook)
 - Slack: `https://api.mug.work/inbound/slack/<workspace>` (set as Slack request URL)
 
-**Inbound SMS requires BYOK.** Platform SMS numbers are outbound-only. To receive inbound SMS, bring your own Twilio or Telnyx number and point its webhook to `https://api.mug.work/inbound/sms/<workspace>`. The route auto-detects the provider (Twilio sends form-encoded, Telnyx sends JSON).
+**Inbound SMS requires BYOK.** Mug's platform number is outbound-only. To receive inbound SMS, bring your own Twilio number and point its webhook to `https://api.mug.work/inbound/sms/<workspace>`.
 
 ### Inbound SMS
 

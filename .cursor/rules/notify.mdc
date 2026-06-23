@@ -5,7 +5,7 @@ globs: ["workflows/**"]
 
 # Mug Notifications
 
-Send email or SMS notifications from workflows. Mug handles delivery (Resend for email, Twilio or Telnyx for SMS), styled HTML templates, and surface link generation. SMS requires BYOK — add your Twilio or Telnyx credentials via `mug secret set` (see below).
+Send email or SMS notifications from workflows. Mug handles delivery (Resend for email, Twilio for SMS), styled HTML templates, and surface link generation. SMS works out of the box — BYOK optional for your own number (see below).
 
 Full API reference (all options, template rendering, BYOK configuration): `.mug/docs/notifications.md`
 
@@ -33,7 +33,7 @@ await ctx.notify.sms({
 });
 ```
 
-**SMS provider setup (BYOK required):** `mug secret set TELNYX_API_KEY=... TELNYX_PHONE_NUMBER=+1...` (preferred) or `mug secret set TWILIO_ACCOUNT_SID=... TWILIO_AUTH_TOKEN=... TWILIO_PHONE_NUMBER=+1...`. Telnyx is used when both are configured. BYOK sends are not metered. For inbound SMS, point your provider webhook to `https://api.mug.work/inbound/sms/<workspace>`.
+**SMS works out of the box** using Mug's platform number. **Optional BYOK** for your own number: `mug secret set TWILIO_ACCOUNT_SID=... TWILIO_AUTH_TOKEN=... TWILIO_PHONE_NUMBER=+1...`. BYOK sends are not metered. For inbound SMS, bring your own Twilio number and point its webhook to `https://api.mug.work/inbound/sms/<workspace>` (Mug's platform number is outbound-only).
 
 ## ctx.surfaceUrl(surfaceId, path?)
 

@@ -59,10 +59,10 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 
 **Notifications** — email and SMS from workflows (use `/notify` skill for guided setup):
 - `ctx.notify.email({ to, message, subject?, fromName?, cta?: { label, url } })` — styled HTML email with optional CTA button
-- `ctx.notify.sms({ to, message })` — SMS via Twilio or Telnyx (E.164 format). **BYOK required** — set `TELNYX_API_KEY` + `TELNYX_PHONE_NUMBER` or `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` + `TWILIO_PHONE_NUMBER` via `mug secret set`. Telnyx preferred when both configured.
+- `ctx.notify.sms({ to, message })` — SMS via Twilio (E.164 format). Works out of the box using Mug's platform number. BYOK: set `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` + `TWILIO_PHONE_NUMBER` via `mug secret set` for your own number and unmetered sends.
 - `ctx.surfaceUrl("approvals")` — returns correct URL for dev (`localhost:8787`) or prod (`workspace.mug.work`)
 - In local dev, emails send via Resend (real delivery) + console log
-- BYOK: set your own Resend/Twilio/Telnyx keys via `mug secret set` for unlimited sends. BYOK SMS and email are not metered.
+- BYOK: set your own Resend/Twilio keys via `mug secret set` for unlimited sends. BYOK SMS and email are not metered.
 - **Usage limits**: email/SMS/AI have per-tier limits. `ctx.notify` and `ctx.ai` throw when limits are exceeded — catch in workflows to handle gracefully. Enable overages at mug.work or `mug billing --overage <meter>=on` to allow per-unit billing beyond limits. BYOK bypasses metered limits. See `.mug/docs/billing.md` for tier details.
 
 **Slack surface** — send Block Kit messages, slash commands, interactive buttons, Home Tab (use `/slack` skill for guided setup):
@@ -84,8 +84,8 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 **Inbound messages** — receive SMS replies, email replies, Slack interactions:
 - Configure in workflow options: `workflow("handle-sms", handler, { inbound: "sms" })`
 - Webhook URLs shown after `mug deploy`: `https://api.mug.work/inbound/sms/<workspace>`, etc. Run `mug webhooks` to see all URLs.
-- **Inbound SMS requires BYOK** — platform numbers are outbound-only. Point your Twilio or Telnyx webhook to the inbound URL. Route auto-detects provider.
-- SMS workflow receives: `ctx.params = { channel: "sms", provider: "twilio"|"telnyx", from: "+1...", body: "YES", ... }`
+- **Inbound SMS requires BYOK** — Mug's platform number is outbound-only. To receive inbound SMS, bring your own Twilio number and point its webhook to the inbound URL.
+- SMS workflow receives: `ctx.params = { channel: "sms", provider: "twilio", from: "+1...", body: "YES", ... }`
 - Email workflow receives: `ctx.params = { channel: "email", from: "user@...", subject: "Re: ...", body: "..." }`
 - Slack workflow receives: `ctx.params = { channel: "slack", userId: "U...", actionId: "approve_btn", actionValue: "..." }`
 - **Pattern**: "send and wait for reply" uses two workflows — one sends + sets a status field in DB, the other catches the inbound reply + checks that field to determine what to do

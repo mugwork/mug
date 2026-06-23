@@ -6,7 +6,7 @@ argument-hint: "<notification type or description>"
 
 # Send Notifications
 
-Send email or SMS notifications from workflows. Mug handles delivery (Resend for email, Twilio or Telnyx for SMS), styled HTML templates, and surface link generation. SMS requires BYOK credentials — add Twilio or Telnyx keys via `mug secret set`.
+Send email or SMS notifications from workflows. Mug handles delivery (Resend for email, Twilio for SMS), styled HTML templates, and surface link generation. SMS works out of the box — BYOK optional for your own number.
 
 For full API reference (all options, template rendering, BYOK configuration), see `.mug/docs/notifications.md`.
 
