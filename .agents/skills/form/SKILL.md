@@ -76,7 +76,7 @@ workflow("handle-<name>", async (ctx) => {
   const email = params._verified_email ?? params.email;
 
   // Store in database
-  await ctx.exec("main", `INSERT INTO submissions (name, email, message, created_at)
+  await ctx.exec(`INSERT INTO submissions (name, email, message, created_at)
     VALUES (?, ?, ?, datetime('now'))`, [name, email, params.message]);
 
   // Send notification
@@ -511,13 +511,13 @@ workflow("handle-timeoff", async (ctx) => {
   const params = ctx.params as Record<string, string>;
   const email = params._verified_email;
 
-  await ctx.exec("main", `CREATE TABLE IF NOT EXISTS time_off_requests (
+  await ctx.exec(`CREATE TABLE IF NOT EXISTS time_off_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER, employee_email TEXT,
     employee_name TEXT, start_date TEXT, end_date TEXT, type TEXT, hours REAL,
     reason TEXT, status TEXT DEFAULT 'pending', created_at TEXT DEFAULT (datetime('now'))
   )`);
 
-  await ctx.exec("main", `INSERT INTO time_off_requests
+  await ctx.exec(`INSERT INTO time_off_requests
     (employee_id, employee_email, employee_name, start_date, end_date, type, hours, reason)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [params.employee_id, email, params.employee_name, params.start_date,

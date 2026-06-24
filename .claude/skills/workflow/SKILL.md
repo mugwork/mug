@@ -41,8 +41,8 @@ Create the file at `workflows/<name>.ts`:
 import { workflow } from "@mugwork/mug";
 
 workflow("<name>", async (ctx) => {
-  // Fetch all open items from the database
-  const rows = await ctx.query("<database>", "SELECT ...");
+  // Fetch all open items from the workspace database
+  const rows = await ctx.query("SELECT ...");
 
   // Classify each item using AI with smart routing
   for (const row of rows) {
@@ -73,8 +73,8 @@ Every workflow must have a `description` in the options object — a plain Engli
 Every `ctx.*` call and `return` statement must have a `//` comment on the line above describing what it does. These comments appear in the workspace explorer as human-readable step descriptions.
 
 ```typescript
-// Check for overdue invoices in QuickBooks
-const overdue = await ctx.query("quickbooks", "SELECT * FROM invoices WHERE ...");
+// Check for overdue invoices
+const overdue = await ctx.query("SELECT * FROM invoices WHERE ...");
 
 // Send a reminder SMS to the customer
 await ctx.notify.sms({ to: inv.phone, message: "..." });
@@ -85,8 +85,8 @@ return { skipped: true };
 
 ### ctx API reference
 
-- `ctx.query(database, sql, params?)` — returns `Record<string, unknown>[]`
-- `ctx.exec(database, sql, params?)` — returns number of changes
+- `ctx.query(sql, params?)` — query unified workspace database (table names auto-resolved across sources). `ctx.query("source", sql, params?)` for scoped queries.
+- `ctx.exec(sql, params?)` — write to workspace database. `ctx.exec("source", sql, params?)` for scoped writes.
 - `ctx.ai(model, { prompt, system, maxTokens?, routing?, billing? })` — returns `{ text, model, usage, routing? }`
   - Use tier names: `"fast"` (cheap), `"balanced"` (mid), `"powerful"` (best). For multi-provider config and BYOK, see the `/ai` skill.
 - `ctx.notify.email({ to, message, subject?, fromName?, cta? })` — send styled email with optional CTA button. For templates, surface links, and BYOK, use the `/notify` skill.
@@ -152,7 +152,7 @@ const event = await ctx.waitFor<{ action: string }>("approval", { timeout: "48 h
 if (event.timedOut) {
   await ctx.notify.sms({ to: submitter, message: "Your request timed out." });
 } else if (event.payload?.action === "approve") {
-  await ctx.exec("main", "UPDATE requests SET status = ? WHERE id = ?", ["approved", requestId]);
+  await ctx.exec("UPDATE requests SET status = ? WHERE id = ?", ["approved", requestId]);
 }
 ```
 

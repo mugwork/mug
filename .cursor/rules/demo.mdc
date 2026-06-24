@@ -58,7 +58,7 @@ workflow("handle-request", async (ctx) => {
 
   // Guard destructive writes
   if (ctx.isDemo) return;
-  await ctx.exec("ops", "UPDATE requests SET status = 'submitted' WHERE id = ?", [params.id]);
+  await ctx.exec("UPDATE requests SET status = 'submitted' WHERE id = ?", [params.id]);
 });
 ```
 

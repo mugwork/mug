@@ -29,7 +29,7 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 - Per-call billing: `billing: "ai.anthropic"` or `billing: "mug-metered"`. Per-workflow: `workflow(name, handler, { billing: "ai.anthropic" })`
 
 **Search** — find relevant data across synced sources:
-- FTS5 auto-indexing: every synced text column gets a full-text index automatically. Query via `ctx.query(db, "SELECT * FROM {table}_fts WHERE {table}_fts MATCH ? ORDER BY rank", [keyword])`
+- FTS5 auto-indexing: every synced text column gets a full-text index automatically. Query via `ctx.query("SELECT * FROM {table}_fts WHERE {table}_fts MATCH ? ORDER BY rank", [keyword])`
 - `ctx.search(query, { source?, limit? })` — semantic similarity search. Returns `{ score, table, primaryKey, row }[]`. Requires deployed workspace (uses Vectorize).
 - `ctx.ask(question, { source?, limit?, model?, system? })` — full RAG: searches relevant data, feeds to LLM, returns grounded answer. Returns `{ answer, sources, usage }`.
 - `ctx.embed(texts)` — generate vector embeddings for an array of strings (batches of 100). Returns `number[][]`. Used internally by `ctx.search`, but available for custom similarity matching.
@@ -40,8 +40,9 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 - `workflow(name, async (ctx) => { ... }, options?)` — register a workflow. Options: `{ description?, schedule?: string | ScheduleConfig, billing?, webhook?: true | { auth, secret }, inbound?: "sms" | "email" | "slack", trigger?: { source, table?, on?, includeInitialSync? } }`
 - **ScheduleConfig** — `{ weekday?, nth? (1-5 or -1=last), time? ("HH:MM"), interval? ("15m"/"1h"), between? (["14:00","16:00"]), skipHolidays? (true or "US"), skipDates? (["YYYY-MM-DD"]), cron?, timezone? }`
 - Every workflow must have a `description` in options. Add `//` comments above each `ctx.*` call and `return` — these appear as step descriptions in the explorer.
-- `ctx.query(database, sql, params?)` — read from any workspace database
-- `ctx.exec(database, sql, params?)` — write to any workspace database
+- `ctx.query(sql, params?)` — query the unified workspace database (all sources). Table names auto-resolve: `"contacts"` → `airtable_contacts` if unique across sources. Use prefixed names when ambiguous.
+- `ctx.query("source", sql, params?)` — query scoped to one source (SQL rewritten automatically with source prefix)
+- `ctx.exec(sql, params?)` — write to workspace database. Tables you create go in the `mug_` namespace.
 - `ctx.ai()` — see **AI** section above
 - `ctx.notify.email({ to, message, subject?, fromName?, cta? })` / `.sms({ to, message })` / `.slack({ to, message, blocks?, thread_ts? })` / `.channel(name, options)` for custom channels
 - `ctx.surfaceUrl(surfaceId, path?)` — generate URL to a surface (dev/prod-aware)
@@ -223,7 +224,8 @@ mug slack token                       # set or rotate Slack bot/refresh tokens (
 mug webhooks                          # list webhook URLs, inbound channels, event triggers
 mug brain <agent>                     # inspect agent brain (local BRAIN.db, falls back to cloud if missing)
 mug brain <agent> struggles           # review unresolved struggles — knowledge gaps and edge cases
-mug login                             # authenticate via email verification
+mug login                             # authenticate via email verification (interactive)
+mug login --email <e> --code <code>   # non-interactive login (agent-friendly)
 mug clone [name]                     # clone workspace from cloud (pulls source files automatically)
 mug create workspace <name>          # register workspace (--subdomain, --tier free|starter|pro|business, --interval monthly|annual)
 mug workspace status                 # workspace info and plan tier
@@ -246,6 +248,7 @@ mug whoami                            # show account email and current workspace
 mug workspaces                       # list all workspaces — cloud account and local machine
 mug sources                          # list sync sources in this workspace
 mug databases                        # list databases in this workspace
+mug tables                           # list all tables with source prefix and resolution status (unique/ambiguous)
 mug workflows                        # list workflows in this workspace
 mug agents                           # list agents in this workspace
 mug surfaces                         # list surfaces in this workspace
@@ -309,9 +312,10 @@ Full API reference with detailed examples in `.mug/docs/`:
 ### Conventions
 
 - **Always filter deleted rows** when querying synced data: `WHERE _mug_deleted_at IS NULL`. Synced tables have `_mug_synced_at` and `_mug_deleted_at` system columns.
-- **databases/ is the local source of truth.** Each `databases/<name>.db` is a SQLite file. `mug sql` reads/writes these directly — no dev server needed. `mug push`/`mug pull` sync them with production.
-- When running `mug dev`, databases are seeded into Durable Objects on startup and written back on shutdown (also on `mug shutdown`). If data seems stale after a workflow run, the DO writeback may be pending — check `databases/<name>.db` directly.
-- The dev server has **hot reload** — file changes to surfaces, workflows, agents, and connectors auto-refresh the browser. The workspace explorer at `/explorer` updates live.
+- **Unified workspace database.** All connector data lives in one database with prefixed table names (`{source}_{table}`). Cross-source JOINs work naturally: `SELECT * FROM airtable_properties JOIN quickbooks_invoices ON ...`. When a table name is unique across sources, you can use it without the prefix — the resolution engine rewrites the SQL automatically.
+- **databases/ is the local source of truth.** Each `databases/<name>.db` is a SQLite file per source. `mug sql <source> <sql>` reads these directly — no dev server needed. `mug push`/`mug pull` sync them with production (with automatic prefix handling).
+- When running `mug dev`, databases are merged into a unified workspace DO on startup (with prefixed table names) and split back into per-source files on shutdown. If data seems stale after a workflow run, check `databases/<name>.db` directly.
+- The dev server has **hot reload** — file changes to surfaces, workflows, agents, and connectors auto-refresh the browser. New connector and workflow files are picked up automatically (no restart needed). The workspace explorer at `/explorer` updates live.
 - Test individual workflows via `/_dev/run/<workflow-name>` (POST) — returns step-by-step results with timing.
 - The `_mug_ops` database is implicit (workflow_runs, workflow_steps)
 - All `ctx.*` methods throw on failure — use try/catch for graceful error handling
@@ -363,6 +367,6 @@ databases/        — local SQLite files synced to production DOs (.db files git
 mug.json          — workspace config
 slack.json        — Slack app config
 ```
-Discover what's in this workspace by listing these directories. `mug.json` has workspace config (name, AI routing, sources, branding). Use `mug sources`, `mug databases`, `mug workflows`, `mug agents`, `mug surfaces`, and `mug files` to list workspace contents, or browse the directories directly.
+Discover what's in this workspace by listing these directories. `mug.json` has workspace config (name, AI routing, sources, branding). The `name` field must be a valid slug: lowercase alphanumeric with hyphens only, 3-63 chars, no underscores or spaces (e.g. `"acme-hvac"`). Use `mug sources`, `mug databases`, `mug workflows`, `mug agents`, `mug surfaces`, and `mug files` to list workspace contents, or browse the directories directly.
 
 <!-- mug:end -->

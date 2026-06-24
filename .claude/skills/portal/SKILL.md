@@ -68,6 +68,7 @@ Portal configs are JSON files in `surfaces/`. The structure is:
 }
 ```
 
+- **No `database` field needed** — portals query the unified workspace database by default. Cross-source JOINs work in any section query. Table names auto-resolve when unique across sources; use prefixed names (`airtable_contacts`) when ambiguous.
 - **Top-level `sections`** render above the tab bar and stay visible across all tabs. Use for summary stats or announcements that apply globally.
 - **Tab `color`** sets the tab's text + underline color (e.g., amber for "Pending", green for "Approved").
 - **Tab `countQuery`** shows a dynamic count badge: `"Pending (3)"`. Query must return one row, one numeric column.
@@ -277,7 +278,7 @@ import { workflow } from "@mugwork/mug";
 workflow("handle-approval", async (ctx) => {
   const params = ctx.params as Record<string, string>;
   const status = params.action === "approve" ? "approved" : "denied";
-  await ctx.exec("main", "UPDATE requests SET status = ? WHERE id = ?", [status, params.id]);
+  await ctx.exec("UPDATE requests SET status = ? WHERE id = ?", [status, params.id]);
   return { id: params.id, status };
 });
 ```

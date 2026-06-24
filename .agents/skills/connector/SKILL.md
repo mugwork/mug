@@ -196,7 +196,7 @@ Once you have the credentials:
 mug secret set <SLUG>_API_KEY=<the credential>
 ```
 
-2. Add the source config to `mug.json` (references the credential, doesn't store it):
+2. Add the source config to `mug.json` with syncs configured (references the credential, doesn't store it):
 ```json
 "sources": {
   "<slug>": {
@@ -205,10 +205,17 @@ mug secret set <SLUG>_API_KEY=<the credential>
       "value": "<the credential>"
     },
     "baseUrl": "<API base URL>",
-    "syncs": {}
+    "syncs": {
+      "<slug>": {
+        "database": "<slug>",
+        "schedule": "*/15 * * * *"
+      }
+    }
   }
 }
 ```
+
+**The `syncs` entry is required** — without it, data won't sync to the local database or appear in the workspace explorer. The `database` value must match the connector's `database` field. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily at midnight).
 
 For `api-key` auth, also include `"header": "<header-name>"` in the auth object.
 
@@ -262,7 +269,7 @@ Connectors in `connectors/` are auto-discovered by `mug deploy` — no import ne
    ```
    mug dev
    ```
-   (Run in background or a separate terminal.)
+   (Run in background or a separate terminal. If the dev server is already running, it auto-detects the new connector — no restart needed.)
 
 2. Trigger the first sync:
    ```
@@ -291,25 +298,17 @@ If there are multiple tables with a relationship (e.g., a foreign key), demonstr
 mug query <slug> "SELECT a.name, b.name FROM <table_a> a JOIN <table_b> b ON a.<fk> = b.id"
 ```
 
-Show the user what's now queryable. This is the payoff — their external data is local and joinable.
+If there are other sources already connected, demonstrate a **cross-source JOIN** — this is the unified database payoff:
 
-## Step 10 — Configure sync schedule (optional)
-
-Ask the user if they want automatic syncing. If yes, add a syncs entry to the source in `mug.json`:
-
-```json
-"sources": {
-  "<slug>": {
-    "auth": { ... },
-    "baseUrl": "...",
-    "syncs": {
-      "<slug>": {
-        "database": "<slug>",
-        "schedule": "*/15 * * * *"
-      }
-    }
-  }
-}
+```typescript
+// In a workflow — table names are auto-prefixed in the unified database
+const enriched = await ctx.query(
+  "SELECT p.address, i.amount FROM <source1>_<table> p JOIN <source2>_<table> i ON p.id = i.property_id"
+);
 ```
 
-Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily at midnight).
+Show the user what's now queryable. All connector data is in one unified database — cross-source JOINs work naturally.
+
+## Step 10 — Verify sync schedule
+
+Syncs were configured in Step 4. Confirm the schedule in `mug.json` matches what the user wants. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily at midnight). The workspace tier constrains the minimum interval (Free: daily, Starter: 15 min, Pro: 5 min, Business: 1 min).

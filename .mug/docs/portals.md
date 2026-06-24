@@ -14,7 +14,7 @@ interface PortalConfig {
   title: string;                // page heading
   description?: string;         // subtitle below heading
   access: FormAccess;           // who can view (same as forms)
-  database?: string;            // workspace database name (default: workspace name)
+  database?: string;            // source name for scoped queries (default: unified workspace database — cross-source queries work automatically)
   sections?: PortalSection[];   // sections rendered above the tab bar, visible on all tabs
   tabs: PortalTab[];            // one or more tabs
   branding?: BrandingConfig;    // optional per-surface override; falls back to mug.json workspace branding

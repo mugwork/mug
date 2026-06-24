@@ -468,3 +468,45 @@ source({
   ],
 });
 ```
+
+## mug.json syncs config
+
+The connector TypeScript file defines *what* to sync. The `syncs` entry in `mug.json` tells the platform *when* to sync and *where* to store it. **Without this config, data won't sync to the local database or appear in the workspace explorer.**
+
+```json
+{
+  "sources": {
+    "<source-name>": {
+      "auth": { "type": "bearer", "value": "API_KEY_NAME" },
+      "baseUrl": "https://api.example.com/v1",
+      "syncs": {
+        "<connector-filename>": {
+          "database": "<database-name>",
+          "schedule": "*/15 * * * *"
+        }
+      }
+    }
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `syncs` key | Must match the connector filename (without `.ts`) in `connectors/` |
+| `database` | Must match the `database` field in the `source()` or `connector()` call |
+| `schedule` | Cron expression. Minimum interval depends on workspace tier: Free = daily, Starter = 15 min, Pro = 5 min, Business = 1 min |
+| `isolated` | Optional. Set `true` to keep this source in its own Durable Object instead of the unified workspace database. Use for very large datasets approaching the 10 GB DO limit. Isolated sources cannot participate in cross-source JOINs. |
+
+Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily).
+
+### Unified workspace database
+
+All synced data lands in a single unified workspace database with prefixed table names (`{source}_{table}`). Cross-source JOINs work naturally — `SELECT * FROM airtable_contacts JOIN quickbooks_invoices ON ...`. When a table name is unique across sources, you can query it without the prefix. See [api.md — Unified workspace database](api.md#unified-workspace-database) for details.
+
+### Manual sync during development
+
+```bash
+mug dev                                          # start dev server
+curl -s -X POST http://localhost:8787/sync/<source-name>  # trigger sync
+mug query <database> "SELECT * FROM <table> LIMIT 5"      # verify data
+```

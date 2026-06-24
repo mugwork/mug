@@ -137,7 +137,7 @@ workflow("approve-request", async (ctx) => {
 
   // Guard destructive writes and external calls
   if (ctx.isDemo) return;
-  await ctx.exec("main", "UPDATE requests SET status = 'approved' WHERE id = ?", [ctx.params.request_id]);
+  await ctx.exec("UPDATE requests SET status = 'approved' WHERE id = ?", [ctx.params.request_id]);
 });
 ```
 

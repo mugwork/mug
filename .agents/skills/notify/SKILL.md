@@ -41,7 +41,7 @@ workflow("handle-request", async (ctx) => {
   const params = ctx.params as Record<string, string>;
 
   // Insert the record
-  await ctx.exec("main", "INSERT INTO requests (...) VALUES (...)", [...]);
+  await ctx.exec("INSERT INTO requests (...) VALUES (...)", [...]);
 
   // Notify the manager with a link to the approval surface
   await ctx.notify.email({
@@ -156,7 +156,7 @@ Notify someone when a form is submitted. The handler workflow receives form data
 workflow("handle-intake", async (ctx) => {
   const { name, email, issue } = ctx.params as Record<string, string>;
 
-  await ctx.exec("main", "INSERT INTO tickets (name, email, issue, status) VALUES (?, ?, ?, 'open')",
+  await ctx.exec("INSERT INTO tickets (name, email, issue, status) VALUES (?, ?, ?, 'open')",
     [name, email, issue]);
 
   await ctx.notify.email({
@@ -177,7 +177,7 @@ workflow("handle-approval", async (ctx) => {
   const params = ctx.params as Record<string, string>;
   const status = params.action === "approve" ? "approved" : "denied";
 
-  await ctx.exec("main", "UPDATE requests SET status = ? WHERE id = ?", [status, params.id]);
+  await ctx.exec("UPDATE requests SET status = ? WHERE id = ?", [status, params.id]);
 
   await ctx.notify.email({
     to: params.employee_email,
@@ -194,8 +194,8 @@ Send a summary on a schedule:
 
 ```typescript
 workflow("weekly-summary", async (ctx) => {
-  const openTickets = await ctx.query("main", "SELECT COUNT(*) as count FROM tickets WHERE status = 'open'");
-  const resolved = await ctx.query("main", "SELECT COUNT(*) as count FROM tickets WHERE status = 'resolved' AND resolved_at > date('now', '-7 days')");
+  const openTickets = await ctx.query("SELECT COUNT(*) as count FROM tickets WHERE status = 'open'");
+  const resolved = await ctx.query("SELECT COUNT(*) as count FROM tickets WHERE status = 'resolved' AND resolved_at > date('now', '-7 days')");
 
   await ctx.notify.email({
     to: "owner@company.com",
@@ -245,7 +245,7 @@ import { workflow } from "@mugwork/mug";
 workflow("handle-request", async (ctx) => {
   const p = ctx.params as Record<string, string>;
 
-  await ctx.exec("main", `INSERT INTO requests (id, employee_name, employee_email, type, start_date, end_date, hours, reason, approver_email, status, created_at)
+  await ctx.exec(`INSERT INTO requests (id, employee_name, employee_email, type, start_date, end_date, hours, reason, approver_email, status, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`,
     [crypto.randomUUID(), p.employee_name, p.employee_email, p.type, p.start_date, p.end_date, p.hours, p.reason, "manager@company.com"]);
 
@@ -266,7 +266,7 @@ workflow("handle-approval", async (ctx) => {
   const p = ctx.params as Record<string, string>;
   const status = p.action === "approve" ? "approved" : "denied";
 
-  await ctx.exec("main", "UPDATE requests SET status = ?, reviewed_at = datetime('now') WHERE id = ?", [status, p.id]);
+  await ctx.exec("UPDATE requests SET status = ?, reviewed_at = datetime('now') WHERE id = ?", [status, p.id]);
 
   await ctx.notify.email({
     to: p.employee_email,

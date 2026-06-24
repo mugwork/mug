@@ -8,59 +8,68 @@ Every workflow receives a `ctx` object with these methods. All methods are autom
 
 All `ctx.*` methods **throw on failure**. Wrap in try/catch if you need to handle errors gracefully. In production (Cloudflare Workflows), each `ctx.*` call is a durable step — if the Worker restarts mid-execution, it resumes from the last completed step.
 
-### ctx.query(database, sql, params?)
+### ctx.query(sql, params?) / ctx.query(source, sql, params?)
 
-Read from any workspace database. Returns an array of row objects.
+Query the unified workspace database. All connector data lives in one database with prefixed table names (`{source}_{table}`). When a table name is unique across sources, the resolution engine rewrites SQL automatically — use the plain name.
 
 ```typescript
-async query(
-  database: string,
-  sql: string,
-  params?: (string | number | null)[]
-): Promise<Record<string, unknown>[]>
+// Primary — query across all sources (table names auto-resolved)
+async query(sql: string, params?: (string | number | null)[]): Promise<Record<string, unknown>[]>
+
+// Scoped — query within one source (prefix added automatically)
+async query(source: string, sql: string, params?: (string | number | null)[]): Promise<Record<string, unknown>[]>
 ```
 
 ```typescript
-const rows = await ctx.query("hubspot", "SELECT * FROM contacts WHERE status = ?", ["active"]);
+// Cross-source JOIN — the core value of the unified database
+const rows = await ctx.query(
+  "SELECT p.address, i.amount FROM airtable_properties p JOIN quickbooks_invoices i ON p.id = i.property_id"
+);
+
+// Auto-resolved — "contacts" resolves to "hubspot_contacts" if unique across sources
+const contacts = await ctx.query("SELECT * FROM contacts WHERE status = ?", ["active"]);
+
+// Scoped to one source — "properties" auto-prefixed to "airtable_properties"
+const props = await ctx.query("airtable", "SELECT * FROM properties WHERE status = 'active'");
 ```
 
-- Locally, each `database` maps to `databases/<name>.db` — query with `mug sql` (no dev server needed). In production, each maps to a Durable Object with its own SQLite.
-- Databases are created automatically on first access — no registration needed
+- All synced data lives in one unified workspace database. Table names are prefixed with the source name (`airtable_contacts`, `quickbooks_invoices`).
+- **Auto-resolution**: if a table name is unique across all sources, use it without the prefix. If ambiguous (e.g., `contacts` in both airtable and hubspot), use the prefixed name or you'll get a clear error listing the options.
 - Always use `?` placeholders for parameterized queries (prevents SQL injection)
-- Each `ctx.query()` targets one database — see [Cross-database queries](#cross-database-queries) for correlating across sources
+- Locally, each source has its own `databases/<source>.db` file. `mug sql <source> <sql>` queries these directly (no prefix needed). The dev server merges them into a unified DO.
 
-**Throws:** SQL syntax errors, table not found, database connection errors.
+**Throws:** SQL syntax errors, table not found, ambiguous table name (with suggestions).
 
-### ctx.exec(database, sql, params?)
+### ctx.exec(sql, params?) / ctx.exec(source, sql, params?)
 
-Write to any workspace database. Returns the number of rows changed.
+Write to the workspace database. Returns the number of rows changed.
 
 ```typescript
-async exec(
-  database: string,
-  sql: string,
-  params?: (string | number | null)[]
-): Promise<number>
+// Write to workspace — tables you create go in the mug_ namespace
+async exec(sql: string, params?: (string | number | null)[]): Promise<number>
+
+// Write scoped to a source — prefix added automatically
+async exec(source: string, sql: string, params?: (string | number | null)[]): Promise<number>
 ```
 
 ```typescript
-await ctx.exec("internal", "CREATE TABLE IF NOT EXISTS alerts (id TEXT PRIMARY KEY, message TEXT, sent_at TEXT)");
-await ctx.exec("internal", "INSERT INTO alerts (id, message, sent_at) VALUES (?, ?, ?)",
+await ctx.exec("CREATE TABLE IF NOT EXISTS alerts (id TEXT PRIMARY KEY, message TEXT, sent_at TEXT)");
+await ctx.exec("INSERT INTO alerts (id, message, sent_at) VALUES (?, ?, ?)",
   [crypto.randomUUID(), "Payment received", new Date().toISOString()]);
 ```
 
 Common patterns:
 ```typescript
 // Upsert
-await ctx.exec("internal", `INSERT INTO contacts (id, name, email) VALUES (?, ?, ?)
-  ON CONFLICT(id) DO UPDATE SET name = excluded.name, email = excluded.email`,
-  [id, name, email]);
+await ctx.exec(`INSERT INTO alerts (id, message, sent_at) VALUES (?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET message = excluded.message, sent_at = excluded.sent_at`,
+  [id, message, new Date().toISOString()]);
 
 // Delete
-await ctx.exec("internal", "DELETE FROM alerts WHERE sent_at < ?", [cutoffDate]);
+await ctx.exec("DELETE FROM alerts WHERE sent_at < ?", [cutoffDate]);
 ```
 
-**Throws:** SQL syntax errors, constraint violations, database connection errors.
+**Throws:** SQL syntax errors, constraint violations, ambiguous table name.
 
 ### ctx.ai(model, options)
 
@@ -131,7 +140,7 @@ All synced text columns are automatically embedded during source sync — no con
 
 **FTS5 keyword search (works locally):** every synced table gets an auto-created `{table}_fts` full-text index. Query directly via `ctx.query()`:
 ```typescript
-const results = await ctx.query("hubspot", 
+const results = await ctx.query(
   `SELECT * FROM contacts JOIN contacts_fts ON contacts.rowid = contacts_fts.rowid
    WHERE contacts_fts MATCH ? ORDER BY rank LIMIT 10`,
   ["roof leak"]
@@ -389,7 +398,7 @@ const result = await ctx.waitFor<{ action: string }>("approval", { timeout: "48 
 if (result.timedOut) {
   await ctx.notify.email({ to: employee, message: "Your request timed out." });
 } else if (result.payload.action === "approve") {
-  await ctx.exec("expenses", "UPDATE requests SET status = 'approved' WHERE id = ?", [requestId]);
+  await ctx.exec("UPDATE requests SET status = 'approved' WHERE id = ?", [requestId]);
 }
 ```
 
@@ -611,7 +620,7 @@ workflow("handle-request", async (ctx) => {
 
   // Guard non-notification side effects
   if (ctx.isDemo) return;
-  await ctx.exec("ops", "UPDATE requests SET status = ? WHERE id = ?", ["submitted", ctx.params.id]);
+  await ctx.exec("UPDATE requests SET status = ? WHERE id = ?", ["submitted", ctx.params.id]);
 });
 ```
 
@@ -986,36 +995,42 @@ Synced tables (from sources) include system columns:
 
 ```typescript
 // Good — excludes deleted records
-const contacts = await ctx.query("hubspot", "SELECT * FROM contacts WHERE _mug_deleted_at IS NULL");
+const contacts = await ctx.query("SELECT * FROM contacts WHERE _mug_deleted_at IS NULL");
 
 // Bad — includes records that were deleted in the source system
-const contacts = await ctx.query("hubspot", "SELECT * FROM contacts");
+const contacts = await ctx.query("SELECT * FROM contacts");
 ```
 
 This applies everywhere: workflows, portal queries, and any SQL against synced tables. Workflow-created tables (via `ctx.exec`) do not have system columns.
 
-### Database auto-creation
+### Unified workspace database
 
-Each database name in Mug maps to a `databases/<name>.db` file locally and a Durable Object in production. Use `mug sql <name> <sql>` to query locally (no dev server needed), `mug push databases/<name>` to upload to production, `mug pull databases/<name>` to download.
-
-- **Source databases** are registered in `mug.json` automatically when you configure a source
-- **Workflow databases** are created on first access — `ctx.exec("my-new-db", "CREATE TABLE IF NOT EXISTS...")` creates both the database and the table. No mug.json registration needed. Locally, use `mug sql my-new-db "CREATE TABLE..."` to create the database file.
-- **The ops database** (`_mug_ops`) is created automatically and contains `workflow_runs` and `workflow_steps` tables
-
-### Cross-database queries
-
-Each `ctx.query()` call targets exactly one database. To correlate data across sources, query each database separately and join in TypeScript:
+All connector data lives in a single workspace database with prefixed table names (`{source}_{table}`). Cross-source JOINs are plain SQL:
 
 ```typescript
-const invoices = await ctx.query("quickbooks", "SELECT * FROM invoices WHERE status = 'overdue'");
-const contacts = await ctx.query("hubspot", "SELECT * FROM contacts WHERE _mug_deleted_at IS NULL");
-
-const contactMap = new Map(contacts.map(c => [c.id, c]));
-const enriched = invoices.map(inv => ({
-  ...inv,
-  contact: contactMap.get(inv.customer_id as string),
-}));
+// Cross-source JOIN — correlate QuickBooks invoices with HubSpot contacts
+const enriched = await ctx.query(
+  `SELECT i.*, c.name, c.email
+   FROM quickbooks_invoices i
+   JOIN hubspot_contacts c ON i.customer_id = c.id
+   WHERE i.status = 'overdue' AND c._mug_deleted_at IS NULL`
+);
 ```
+
+**Table name resolution:** when a table name is unique across all sources, use it without the prefix. If ambiguous (same name in multiple sources), you'll get a clear error listing the prefixed options.
+
+```typescript
+// "properties" only exists in airtable — auto-resolved to airtable_properties
+const props = await ctx.query("SELECT * FROM properties WHERE status = 'active'");
+
+// "contacts" in both airtable and hubspot — must use prefix
+const contacts = await ctx.query("SELECT * FROM hubspot_contacts WHERE _mug_deleted_at IS NULL");
+```
+
+- **Locally**, each source has its own `databases/<source>.db` file. `mug sql <source> <sql>` queries these directly (no prefix needed). The dev server merges them into a unified DO with prefixes.
+- **Tables you create** via `ctx.exec()` go in the `mug_` namespace (e.g., `ctx.exec("CREATE TABLE alerts ...")` creates `mug_alerts`).
+- **Source isolation**: large sources can be kept in their own DO with `"isolated": true` in the source config. Isolated sources cannot participate in cross-source JOINs.
+- **The ops database** (`_mug_ops`) is implicit — contains `workflow_runs` and `workflow_steps` tables.
 
 ### Ops database
 
@@ -1129,7 +1144,7 @@ All `ctx.*` methods throw standard JavaScript `Error` objects on failure. Workfl
 
 ```typescript
 workflow("safe-notify", async (ctx) => {
-  const overdue = await ctx.query("quickbooks", "SELECT * FROM invoices WHERE status = 'overdue' AND _mug_deleted_at IS NULL");
+  const overdue = await ctx.query("SELECT * FROM invoices WHERE status = 'overdue' AND _mug_deleted_at IS NULL");
 
   for (const inv of overdue) {
     try {
@@ -1139,7 +1154,7 @@ workflow("safe-notify", async (ctx) => {
       });
     } catch (e) {
       // Log failure but continue processing other invoices
-      await ctx.exec("internal", "INSERT INTO notification_failures (invoice_id, error, ts) VALUES (?, ?, ?)",
+      await ctx.exec("INSERT INTO notification_failures (invoice_id, error, ts) VALUES (?, ?, ?)",
         [inv.id as string, (e as Error).message, new Date().toISOString()]);
     }
   }
@@ -1255,15 +1270,15 @@ Workflow receives webhook data as params (normalized across providers):
 ```typescript
 workflow("handle-sms-reply", async (ctx) => {
   const { from, body } = ctx.params as { from: string; body: string };
-  const [contact] = await ctx.query("main", "SELECT * FROM contacts WHERE phone = ?", [from]);
+  const [contact] = await ctx.query("SELECT * FROM contacts WHERE phone = ?", [from]);
   if (!contact?.pending_action) return;
 
   if (contact.pending_action === "expense-approval" && body.trim().toUpperCase() === "YES") {
     const data = JSON.parse(contact.pending_data as string);
-    await ctx.exec("main", "UPDATE expenses SET status = 'approved' WHERE id = ?", [data.expenseId]);
+    await ctx.exec("UPDATE expenses SET status = 'approved' WHERE id = ?", [data.expenseId]);
     await ctx.notify.sms({ to: from, message: "Approved. Thanks!" });
   }
-  await ctx.exec("main", "UPDATE contacts SET pending_action = NULL WHERE id = ?", [contact.id]);
+  await ctx.exec("UPDATE contacts SET pending_action = NULL WHERE id = ?", [contact.id]);
 });
 ```
 
@@ -1293,17 +1308,16 @@ Use two workflows — one sends + flags the contact, the other catches the reply
 // Workflow 1: Send and flag
 workflow("request-approval", async (ctx) => {
   const { contactId, amount } = ctx.params;
-  const [contact] = await ctx.query("main", "SELECT phone FROM contacts WHERE id = ?", [contactId]);
+  const [contact] = await ctx.query("SELECT phone FROM contacts WHERE id = ?", [contactId]);
   await ctx.notify.sms({ to: contact.phone, message: `Approve $${amount}? Reply YES or NO` });
-  await ctx.exec("main",
-    "UPDATE contacts SET pending_action = 'expense-approval', pending_data = ? WHERE id = ?",
+  await ctx.exec(    "UPDATE contacts SET pending_action = 'expense-approval', pending_data = ? WHERE id = ?",
     [JSON.stringify({ amount, contactId }), contactId]);
 });
 
 // Workflow 2: Catch reply
 workflow("handle-sms-reply", async (ctx) => {
   const { from, body } = ctx.params as { from: string; body: string };
-  const [contact] = await ctx.query("main", "SELECT * FROM contacts WHERE phone = ?", [from]);
+  const [contact] = await ctx.query("SELECT * FROM contacts WHERE phone = ?", [from]);
   if (!contact?.pending_action) return;
   // ... check pending_action, take action, clear flag
 });
@@ -1660,7 +1674,7 @@ The `definitions` section enables drift detection — `mug status` compares loca
 | `mug clone [name]` | Clone an existing workspace from Mug cloud. Pulls source files (connectors, workflows, surfaces, agents) automatically. Files and databases stay remote until `mug pull --all`. |
 | `mug start` | Get started — orientation for new workspaces, progress checklist for existing ones |
 | `mug update` | Regenerate platform files (CLAUDE.md, skills, docs). Warns if CLI is outdated. Updates instruction files, skills, and docs only — your code in `connectors/`, `workflows/`, `agents/` is safe. Framework types come from the `@mugwork/mug` package. |
-| `mug login` | Authenticate via email verification (creates account on first use) |
+| `mug login` | Authenticate via email verification — interactive prompts, or non-interactive with `--email <e>` (send code) and `--email <e> --code <c>` (verify). Creates account on first use. |
 | `mug whoami` | Show account email and current workspace |
 | `mug workspaces` | List all workspaces — cloud account and local machine, with paths and roles |
 | `mug create workspace <name>` | Register workspace on the platform |

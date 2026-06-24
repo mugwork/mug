@@ -229,7 +229,7 @@ interface FileField extends BaseField {
 ```typescript
 workflow("handle-request", async (ctx) => {
   const photoUrl = ctx.params.photo as string;  // "https://r2.mug.work/workspace/uploads/abc123.jpg"
-  await ctx.exec("internal", "INSERT INTO requests (photo_url) VALUES (?)", [photoUrl]);
+  await ctx.exec("INSERT INTO requests (photo_url) VALUES (?)", [photoUrl]);
 });
 ```
 

@@ -98,10 +98,12 @@ Reads from `databases/*.db` and `files/`, uploads to production DOs and R2. The 
 Authenticate with the Mug platform via email verification.
 
 ```bash
-mug login
+mug login                                          # interactive (prompts for email and code)
+mug login --email user@example.com                 # send verification code (non-interactive)
+mug login --email user@example.com --code 123456   # verify and save credentials (non-interactive)
 ```
 
-Prompts for email, sends a 6-digit verification code, and stores the session token in `~/.mug/credentials`. Creates a new account on first use.
+Interactive mode prompts for email and code. Non-interactive mode splits into two commands — `--email` alone sends the code, `--email` + `--code` together verifies. Stores the session token in `~/.mug/credentials`. Creates a new account on first use.
 
 ### mug whoami
 

@@ -77,7 +77,7 @@ Subject shows original recipient: `[DEV → manager@company.com] New request`. O
 ```typescript
 workflow("handle-intake", async (ctx) => {
   const { name, email, issue } = ctx.params as Record<string, string>;
-  await ctx.exec("main", "INSERT INTO tickets (...) VALUES (...)", [name, email, issue]);
+  await ctx.exec("INSERT INTO tickets (...) VALUES (...)", [name, email, issue]);
 
   await ctx.notify.email({
     to: "support@company.com",
@@ -94,7 +94,7 @@ workflow("handle-intake", async (ctx) => {
 workflow("handle-approval", async (ctx) => {
   const params = ctx.params as Record<string, string>;
   const status = params.action === "approve" ? "approved" : "denied";
-  await ctx.exec("main", "UPDATE requests SET status = ? WHERE id = ?", [status, params.id]);
+  await ctx.exec("UPDATE requests SET status = ? WHERE id = ?", [status, params.id]);
 
   await ctx.notify.email({
     to: params.employee_email,
@@ -109,7 +109,7 @@ workflow("handle-approval", async (ctx) => {
 
 ```typescript
 workflow("weekly-summary", async (ctx) => {
-  const open = await ctx.query("main", "SELECT COUNT(*) as count FROM tickets WHERE status = 'open'");
+  const open = await ctx.query("SELECT COUNT(*) as count FROM tickets WHERE status = 'open'");
   await ctx.notify.email({
     to: "owner@company.com",
     subject: `Weekly Summary — ${new Date().toLocaleDateString()}`,
@@ -149,7 +149,7 @@ import { workflow } from "@mugwork/mug";
 
 workflow("handle-request", async (ctx) => {
   const p = ctx.params as Record<string, string>;
-  await ctx.exec("main", `INSERT INTO requests (id, employee_name, employee_email, type, start_date, end_date, hours, reason, approver_email, status, created_at)
+  await ctx.exec(`INSERT INTO requests (id, employee_name, employee_email, type, start_date, end_date, hours, reason, approver_email, status, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`,
     [crypto.randomUUID(), p.employee_name, p.employee_email, p.type, p.start_date, p.end_date, p.hours, p.reason, "manager@company.com"]);
 
@@ -168,7 +168,7 @@ import { workflow } from "@mugwork/mug";
 workflow("handle-approval", async (ctx) => {
   const p = ctx.params as Record<string, string>;
   const status = p.action === "approve" ? "approved" : "denied";
-  await ctx.exec("main", "UPDATE requests SET status = ?, reviewed_at = datetime('now') WHERE id = ?", [status, p.id]);
+  await ctx.exec("UPDATE requests SET status = ?, reviewed_at = datetime('now') WHERE id = ?", [status, p.id]);
 
   await ctx.notify.email({
     to: p.employee_email,

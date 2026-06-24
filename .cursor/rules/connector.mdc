@@ -138,7 +138,7 @@ Check the output — it reports endpoint count and quality score.
 mug secret set <SLUG>_API_KEY=<the credential>
 ```
 
-Add source config to `mug.json`:
+Add source config to `mug.json` with syncs configured:
 ```json
 "sources": {
   "<slug>": {
@@ -147,10 +147,17 @@ Add source config to `mug.json`:
       "value": "<the credential>"
     },
     "baseUrl": "<API base URL>",
-    "syncs": {}
+    "syncs": {
+      "<slug>": {
+        "database": "<slug>",
+        "schedule": "*/15 * * * *"
+      }
+    }
   }
 }
 ```
+
+**The `syncs` entry is required** — without it, data won't sync to the local database or appear in the workspace explorer. The `database` value must match the connector's `database` field. All synced tables land in the unified workspace database with `{source}_{table}` prefixed names, enabling cross-source JOINs. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily).
 
 For `api-key` auth, also include `"header": "<header-name>"` in the auth object.
 
@@ -189,7 +196,7 @@ The generated code is a starting point — customize table definitions, add filt
 ### 8. Sync and verify data
 
 ```bash
-mug dev                                                    # start dev server
+mug dev                                                    # start dev server (auto-detects new connectors — no restart needed)
 curl -s -X POST http://localhost:8787/sync/<slug>           # trigger first sync
 mug query <slug> "SELECT name FROM sqlite_master WHERE type='table'"  # check tables
 mug query <slug> "SELECT count(*) FROM <first-table>"      # check row count
@@ -208,22 +215,6 @@ If multiple related tables exist, demonstrate a cross-table JOIN:
 mug query <slug> "SELECT a.name, b.name FROM <table_a> a JOIN <table_b> b ON a.<fk> = b.id"
 ```
 
-### 10. Sync schedule (optional)
+### 10. Verify sync schedule
 
-Add syncs to the source in `mug.json` for automatic syncing:
-```json
-"sources": {
-  "<slug>": {
-    "auth": { ... },
-    "baseUrl": "...",
-    "syncs": {
-      "<slug>": {
-        "database": "<slug>",
-        "schedule": "*/15 * * * *"
-      }
-    }
-  }
-}
-```
-
-Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily).
+Syncs were configured in step 4. Confirm the schedule in `mug.json` matches what the user wants. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily). Workspace tier constrains the minimum interval (Free: daily, Starter: 15 min, Pro: 5 min, Business: 1 min).

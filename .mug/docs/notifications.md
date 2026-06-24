@@ -237,7 +237,7 @@ workflow("handle-request", async (ctx) => {
   const p = ctx.params as Record<string, string>;
 
   // Insert the request
-  await ctx.exec("main", `INSERT INTO time_off_requests
+  await ctx.exec(`INSERT INTO time_off_requests
     (id, employee_name, employee_email, type, start_date, end_date, hours, reason, approver_email, status, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`,
     [crypto.randomUUID(), p.employee_name, p.employee_email, p.type,
@@ -262,8 +262,7 @@ workflow("handle-approval", async (ctx) => {
   const status = p.action === "approve" ? "approved" : "denied";
 
   // Update the request
-  await ctx.exec("main",
-    "UPDATE time_off_requests SET status = ?, reviewed_at = datetime('now') WHERE id = ?",
+  await ctx.exec(    "UPDATE time_off_requests SET status = ?, reviewed_at = datetime('now') WHERE id = ?",
     [status, p.id]);
 
   // Notify the employee with a link to their portal

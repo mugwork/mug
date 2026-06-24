@@ -11,7 +11,7 @@ import { workflow } from "@mugwork/mug";
 
 workflow("invoice-followup", async (ctx) => {
   // Find all overdue unpaid invoices
-  const overdue = await ctx.query("quickbooks", "SELECT * FROM invoices WHERE due_date < date('now') AND status = 'open'");
+  const overdue = await ctx.query("SELECT * FROM invoices WHERE due_date < date('now') AND status = 'open'");
 
   for (const inv of overdue) {
     // Send a payment reminder SMS to each customer
@@ -51,8 +51,7 @@ Add a `//` comment on the line immediately above each `ctx.*` call and `return` 
 
 ```typescript
 // Check for overdue invoices in QuickBooks
-const overdue = await ctx.query("quickbooks",
-  "SELECT * FROM invoices WHERE due_date < date('now') AND status = 'open'");
+const overdue = await ctx.query(  "SELECT * FROM invoices WHERE due_date < date('now') AND status = 'open'");
 
 // No overdue invoices, nothing to do
 if (overdue.length === 0) return { skipped: true };
@@ -265,7 +264,7 @@ import { workflow } from "@mugwork/mug";
 
 workflow("handle-intake", async (ctx) => {
   const { company, revenue } = ctx.params;
-  await ctx.exec("internal", "INSERT INTO clients (company, revenue) VALUES (?, ?)", [company, revenue]);
+  await ctx.exec("INSERT INTO clients (company, revenue) VALUES (?, ?)", [company, revenue]);
   await ctx.notify.slack({
     to: "#new-clients",
     message: `New intake: ${company} ($${revenue} revenue)`,
@@ -287,7 +286,7 @@ workflow("process-stripe-event", async (ctx) => {
   }
   const { type, data } = ctx.params;
   if (type === "invoice.paid") {
-    await ctx.exec("internal", "UPDATE invoices SET status = 'paid' WHERE stripe_id = ?",
+    await ctx.exec("UPDATE invoices SET status = 'paid' WHERE stripe_id = ?",
       [data.object.id as string]);
   }
 }, { webhook: { auth: "hmac", secret: "STRIPE_WEBHOOK_SECRET" } });
@@ -342,8 +341,7 @@ workflow("daily-report", async (ctx) => {
   // 1. Query data from multiple sources
   const openTickets = await ctx.query("zendesk",
     "SELECT * FROM tickets WHERE status = 'open' AND _mug_deleted_at IS NULL");
-  const overdueInvoices = await ctx.query("quickbooks",
-    "SELECT * FROM invoices WHERE due_date < date('now') AND status = 'unpaid'");
+  const overdueInvoices = await ctx.query(    "SELECT * FROM invoices WHERE due_date < date('now') AND status = 'unpaid'");
 
   // 2. AI summary
   const summary = await ctx.ai("balanced", {
@@ -359,8 +357,7 @@ workflow("daily-report", async (ctx) => {
   });
 
   // 4. Log the report
-  await ctx.exec("internal",
-    "INSERT INTO reports (id, type, content, created_at) VALUES (?, ?, ?, ?)",
+  await ctx.exec(    "INSERT INTO reports (id, type, content, created_at) VALUES (?, ?, ?, ?)",
     [crypto.randomUUID(), "daily", summary.text, new Date().toISOString()]);
 
   return { tickets: openTickets.length, invoices: overdueInvoices.length };
