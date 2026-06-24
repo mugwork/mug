@@ -99,11 +99,11 @@ Authenticate with the Mug platform via email verification.
 
 ```bash
 mug login                                          # interactive (prompts for email and code)
-mug login --email user@example.com                 # send verification code (non-interactive)
-mug login --email user@example.com --code 123456   # verify and save credentials (non-interactive)
+mug login user@example.com                         # send verification code (non-interactive)
+mug login user@example.com --code 123456           # verify and save credentials
 ```
 
-Interactive mode prompts for email and code. Non-interactive mode splits into two commands — `--email` alone sends the code, `--email` + `--code` together verifies. Stores the session token in `~/.mug/credentials`. Creates a new account on first use.
+Interactive mode prompts for email and code. Non-interactive mode passes email as an argument — email alone sends the code, email + `--code` together verifies. Stores the session token in `~/.mug/credentials`. Creates a new account on first use.
 
 ### mug whoami
 
@@ -296,10 +296,16 @@ mug sql main "CREATE TABLE employees (id INTEGER PRIMARY KEY, name TEXT, email T
 
 Supports both reads and writes. Writes auto-create the database file if it doesn't exist. The `databases/` directory is the local source of truth — `mug push` uploads to production, `mug pull` downloads from production.
 
+Cross-source JOINs require `--dev` (or `--production`) because the unified database lives in the Durable Object, not in local per-source files:
+```bash
+mug sql main "SELECT p.address, i.total FROM servicetitan_properties p JOIN quickbooks_invoices i ON p.id = i.property_id" --dev
+```
+
 Flags:
 - `--json` — JSON output
 - `--production` — run against production database
-- `--dev` — route through dev server instead of local file (for debugging)
+- `--dev` — route through dev server's unified database (cross-source JOINs work here)
+- `--port <n>` — override dev server port (implies `--dev`)
 
 ### mug usage
 
@@ -616,7 +622,7 @@ export default workflow("handle-request", async (ctx) => {
 
   // Guard other side effects manually
   if (ctx.isDemo) return;
-  await ctx.exec("operations", "UPDATE jobs SET status = 'approved' WHERE id = ?", [params.job_id]);
+  await ctx.exec("UPDATE jobs SET status = 'approved' WHERE id = ?", [params.job_id]);
 });
 ```
 

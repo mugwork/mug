@@ -45,6 +45,8 @@ const result = await ctx.agent("invoice-analyzer", {
 
 ## Test from CLI
 
+New agents are picked up automatically by the running dev server — no restart needed.
+
 ```bash
 mug invoke <name> "your goal or question"         # one-shot invocation (auto-routes: dev server → production)
 mug invoke <name> "your goal or question" --cloud  # force production

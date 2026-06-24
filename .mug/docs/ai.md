@@ -302,7 +302,7 @@ workflow("daily-ticket-triage", async (ctx) => {
     }
 
     // Update ticket
-    await ctx.exec("helpdesk", "UPDATE tickets SET category = ?, status = 'triaged' WHERE id = ?",
+    await ctx.exec("UPDATE tickets SET category = ?, status = 'triaged' WHERE id = ?",
       [category.text, ticket.id as number]);
   }
 

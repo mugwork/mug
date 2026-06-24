@@ -298,10 +298,15 @@ If there are multiple tables with a relationship (e.g., a foreign key), demonstr
 mug query <slug> "SELECT a.name, b.name FROM <table_a> a JOIN <table_b> b ON a.<fk> = b.id"
 ```
 
-If there are other sources already connected, demonstrate a **cross-source JOIN** — this is the unified database payoff:
+If there are other sources already connected, demonstrate a **cross-source JOIN** — this is the unified database payoff. Cross-source JOINs require the unified database (dev server or production), not the per-source local files:
+
+```bash
+# From the CLI — use --dev to query the unified database
+mug query main "SELECT p.address, i.amount FROM <source1>_<table> p JOIN <source2>_<table> i ON p.id = i.property_id" --dev
+```
 
 ```typescript
-// In a workflow — table names are auto-prefixed in the unified database
+// In a workflow — ctx.query() already uses the unified database
 const enriched = await ctx.query(
   "SELECT p.address, i.amount FROM <source1>_<table> p JOIN <source2>_<table> i ON p.id = i.property_id"
 );

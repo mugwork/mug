@@ -42,7 +42,7 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 - Every workflow must have a `description` in options. Add `//` comments above each `ctx.*` call and `return` — these appear as step descriptions in the explorer.
 - `ctx.query(sql, params?)` — query the unified workspace database (all sources). Table names auto-resolve: `"contacts"` → `airtable_contacts` if unique across sources. Use prefixed names when ambiguous.
 - `ctx.query("source", sql, params?)` — query scoped to one source (SQL rewritten automatically with source prefix)
-- `ctx.exec(sql, params?)` — write to workspace database. Tables you create go in the `mug_` namespace.
+- `ctx.exec(sql, params?)` — write to workspace database. Always use the one-arg form for your own tables (CREATE TABLE, INSERT, UPDATE, DELETE). The two-arg form `ctx.exec("source", sql)` is only for writing back to a synced connector source — never pass a database name for tables you create.
 - `ctx.ai()` — see **AI** section above
 - `ctx.notify.email({ to, message, subject?, fromName?, cta? })` / `.sms({ to, message })` / `.slack({ to, message, blocks?, thread_ts? })` / `.channel(name, options)` for custom channels
 - `ctx.surfaceUrl(surfaceId, path?)` — generate URL to a surface (dev/prod-aware)
@@ -184,7 +184,8 @@ mug chat <name>                      # start interactive chat session with an ag
 mug logs [workflow]                  # view execution log (--json, --limit N, --cloud, --local)
 mug status                          # workspace drift summary + schedule health (--json)
 mug status <workflow> <instanceId>   # check production workflow instance status (--json)
-mug sql <db> <sql>                   # run SQL against databases/<db>.db (--json, --production, --dev, --port) (alias: mug query)
+mug sql <db> <sql>                   # run SQL against databases/<db>.db (alias: mug query)
+mug sql <db> <sql> --dev             # query unified database via dev server (cross-source JOINs work here)
 mug usage                            # usage across all 6 billing dimensions (--json, --period)
 mug workspace plan                   # view or change workspace plan tier (opens Stripe for paid tiers)
 mug billing                              # view billing + per-meter overage settings (--json)
@@ -225,7 +226,8 @@ mug webhooks                          # list webhook URLs, inbound channels, eve
 mug brain <agent>                     # inspect agent brain (local BRAIN.db, falls back to cloud if missing)
 mug brain <agent> struggles           # review unresolved struggles — knowledge gaps and edge cases
 mug login                             # authenticate via email verification (interactive)
-mug login --email <e> --code <code>   # non-interactive login (agent-friendly)
+mug login <email>                     # send verification code (non-interactive)
+mug login <email> --code <code>       # verify and save credentials
 mug clone [name]                     # clone workspace from cloud (pulls source files automatically)
 mug create workspace <name>          # register workspace (--subdomain, --tier free|starter|pro|business, --interval monthly|annual)
 mug workspace status                 # workspace info and plan tier
@@ -314,7 +316,7 @@ Full API reference with detailed examples in `.mug/docs/`:
 - **Always filter deleted rows** when querying synced data: `WHERE _mug_deleted_at IS NULL`. Synced tables have `_mug_synced_at` and `_mug_deleted_at` system columns.
 - **Unified workspace database.** All connector data lives in one database with prefixed table names (`{source}_{table}`). Cross-source JOINs work naturally: `SELECT * FROM airtable_properties JOIN quickbooks_invoices ON ...`. When a table name is unique across sources, you can use it without the prefix — the resolution engine rewrites the SQL automatically.
 - **databases/ is the local source of truth.** Each `databases/<name>.db` is a SQLite file per source. `mug sql <source> <sql>` reads these directly — no dev server needed. `mug push`/`mug pull` sync them with production (with automatic prefix handling).
-- When running `mug dev`, databases are merged into a unified workspace DO on startup (with prefixed table names) and split back into per-source files on shutdown. If data seems stale after a workflow run, check `databases/<name>.db` directly.
+- When running `mug dev`, databases are merged into a unified workspace DO on startup (with prefixed table names) and split back into per-source files on shutdown. **To query the unified database from the CLI, use `mug sql <db> <sql> --dev`** — this routes through the dev server where cross-source JOINs work. Without `--dev`, `mug sql` reads per-source local files that can't join across sources.
 - The dev server has **hot reload** — file changes to surfaces, workflows, agents, and connectors auto-refresh the browser. New connector and workflow files are picked up automatically (no restart needed). The workspace explorer at `/explorer` updates live.
 - Test individual workflows via `/_dev/run/<workflow-name>` (POST) — returns step-by-step results with timing.
 - The `_mug_ops` database is implicit (workflow_runs, workflow_steps)

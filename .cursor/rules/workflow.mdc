@@ -66,7 +66,7 @@ return { skipped: true };
 ## ctx API
 
 - `ctx.query(sql, params?)` — query unified workspace database (table names auto-resolved). `ctx.query("source", sql, params?)` for scoped.
-- `ctx.exec(sql, params?)` — write to workspace database. `ctx.exec("source", sql, params?)` for scoped.
+- `ctx.exec(sql, params?)` — write to workspace database. Always one-arg for your own tables. Two-arg `ctx.exec("source", sql)` is only for writing back to a synced connector — never pass a made-up database name.
 - `ctx.ai(model, { prompt, system, maxTokens?, routing?, billing? })` — returns `{ text, model, usage, routing? }`
   - Use tier names: `"fast"` (cheap), `"balanced"` (mid), `"powerful"` (best). See `/ai` skill for multi-provider and BYOK.
 - `ctx.notify.email({ to, message, subject?, fromName?, cta? })` — styled email with optional CTA button. See `/notify` skill.
@@ -127,7 +127,7 @@ Inbound params by channel:
 ## Testing
 
 ```bash
-mug dev          # start dev server
+mug dev          # start dev server (auto-detects new workflows — no restart needed)
 mug run <name>   # execute workflow
 mug logs <name>  # view step-by-step execution log (dev or production)
 mug logs <name> --production  # force production logs

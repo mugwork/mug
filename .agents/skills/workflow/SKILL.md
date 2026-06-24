@@ -86,7 +86,7 @@ return { skipped: true };
 ### ctx API reference
 
 - `ctx.query(sql, params?)` — query unified workspace database (table names auto-resolved across sources). `ctx.query("source", sql, params?)` for scoped queries.
-- `ctx.exec(sql, params?)` — write to workspace database. `ctx.exec("source", sql, params?)` for scoped writes.
+- `ctx.exec(sql, params?)` — write to workspace database. Always use the one-arg form for your own tables. The two-arg form `ctx.exec("source", sql)` is only for writing back to a synced connector source — never pass a made-up database name.
 - `ctx.ai(model, { prompt, system, maxTokens?, routing?, billing? })` — returns `{ text, model, usage, routing? }`
   - Use tier names: `"fast"` (cheap), `"balanced"` (mid), `"powerful"` (best). For multi-provider config and BYOK, see the `/ai` skill.
 - `ctx.notify.email({ to, message, subject?, fromName?, cta? })` — send styled email with optional CTA button. For templates, surface links, and BYOK, use the `/notify` skill.
@@ -112,11 +112,11 @@ Every `ctx.*` call is automatically logged with timing, input/output, and token 
 ## Step 3 — Test locally
 
 ```bash
-mug dev          # start the dev server (if not already running)
+mug dev          # start the dev server (if not already running — auto-detects new workflows, no restart needed)
 mug run <name>   # execute the workflow
 ```
 
-Workflows in `workflows/` are auto-discovered by `mug deploy` — no import needed.
+Workflows in `workflows/` are auto-discovered — no import or restart needed.
 
 Check the output:
 - `[+]` = success, `[x]` = error

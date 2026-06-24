@@ -192,13 +192,8 @@ The agent queries the database, understands the situation, and triggers the appr
 
 ## Step 6 — Deploy and test
 
-```bash
-mug deploy
-```
+New agents are picked up automatically by the running dev server — no restart needed.
 
-Deploy validates agent.json, writes SOUL.md + skills to the agent runtime, and creates an empty BRAIN.db on first deploy.
-
-Test the agent from the CLI:
 ```bash
 mug invoke <name> "your goal or question"         # one-shot invocation (auto-routes: dev server → production)
 mug invoke <name> "your goal or question" --cloud  # force production

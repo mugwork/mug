@@ -45,17 +45,24 @@ const props = await ctx.query("airtable", "SELECT * FROM properties WHERE status
 Write to the workspace database. Returns the number of rows changed.
 
 ```typescript
-// Write to workspace — tables you create go in the mug_ namespace
+// Write to workspace — use this for all tables you create
 async exec(sql: string, params?: (string | number | null)[]): Promise<number>
 
-// Write scoped to a source — prefix added automatically
+// Write scoped to a synced connector source — prefix added automatically
+// ONLY use this when writing back to a connector source (e.g., bidirectional sync)
 async exec(source: string, sql: string, params?: (string | number | null)[]): Promise<number>
 ```
 
+**Always use the one-arg form for your own tables.** The two-arg form is only for writing back to a synced connector source. Never pass a made-up database name like `"main"` or `"app"` — your tables live in the unified workspace database alongside synced data.
+
 ```typescript
+// Correct — one-arg form, table lives in the workspace database
 await ctx.exec("CREATE TABLE IF NOT EXISTS alerts (id TEXT PRIMARY KEY, message TEXT, sent_at TEXT)");
 await ctx.exec("INSERT INTO alerts (id, message, sent_at) VALUES (?, ?, ?)",
   [crypto.randomUUID(), "Payment received", new Date().toISOString()]);
+
+// WRONG — don't pass a database name for your own tables
+// await ctx.exec("main", "CREATE TABLE IF NOT EXISTS alerts ...");
 ```
 
 Common patterns:
@@ -1674,7 +1681,7 @@ The `definitions` section enables drift detection — `mug status` compares loca
 | `mug clone [name]` | Clone an existing workspace from Mug cloud. Pulls source files (connectors, workflows, surfaces, agents) automatically. Files and databases stay remote until `mug pull --all`. |
 | `mug start` | Get started — orientation for new workspaces, progress checklist for existing ones |
 | `mug update` | Regenerate platform files (CLAUDE.md, skills, docs). Warns if CLI is outdated. Updates instruction files, skills, and docs only — your code in `connectors/`, `workflows/`, `agents/` is safe. Framework types come from the `@mugwork/mug` package. |
-| `mug login` | Authenticate via email verification — interactive prompts, or non-interactive with `--email <e>` (send code) and `--email <e> --code <c>` (verify). Creates account on first use. |
+| `mug login` | Authenticate via email verification — interactive prompts, or `mug login <email>` to send code and `mug login <email> --code <c>` to verify. Creates account on first use. |
 | `mug whoami` | Show account email and current workspace |
 | `mug workspaces` | List all workspaces — cloud account and local machine, with paths and roles |
 | `mug create workspace <name>` | Register workspace on the platform |

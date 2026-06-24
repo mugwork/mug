@@ -75,8 +75,8 @@ For full method signatures, return types, error behavior, and data patterns, see
 
 | Method | Purpose |
 |--------|---------|
-| `ctx.query(db, sql, params?)` | Read rows from any workspace database |
-| `ctx.exec(db, sql, params?)` | Write to any workspace database, returns change count |
+| `ctx.query(sql, params?)` | Read rows from the workspace database |
+| `ctx.exec(sql, params?)` | Write to the workspace database, returns change count |
 | `ctx.ai(model, options)` | Call an AI model — use `"auto"` for smart routing. See [ai.md](ai.md) |
 | `ctx.notify.email(options)` | Send styled HTML email with optional CTA. See [notifications.md](notifications.md) |
 | `ctx.notify.sms(options)` | Send SMS via Twilio (E.164 format) |

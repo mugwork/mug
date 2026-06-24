@@ -215,6 +215,11 @@ If multiple related tables exist, demonstrate a cross-table JOIN:
 mug query <slug> "SELECT a.name, b.name FROM <table_a> a JOIN <table_b> b ON a.<fk> = b.id"
 ```
 
+If other sources are already connected, demonstrate a **cross-source JOIN** using `--dev` (the unified database lives in the dev server, not in per-source local files):
+```bash
+mug query main "SELECT p.address, i.amount FROM <source1>_<table> p JOIN <source2>_<table> i ON p.id = i.property_id" --dev
+```
+
 ### 10. Verify sync schedule
 
 Syncs were configured in step 4. Confirm the schedule in `mug.json` matches what the user wants. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily). Workspace tier constrains the minimum interval (Free: daily, Starter: 15 min, Pro: 5 min, Business: 1 min).

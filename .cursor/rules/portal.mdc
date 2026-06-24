@@ -155,7 +155,7 @@ No `?from=` = no breadcrumb. Works on both form and portal surfaces.
 ```bash
 mug portal init <name>       # scaffold in surfaces/
 mug portal list              # list portals with URLs
-mug dev                      # serve locally with View As banner
+mug dev                      # serve locally (auto-detects new portals — no restart needed)
 ```
 
 **Home screen**: `surfaces/_home.json` configures the workspace root URL layout (groups, buttons, cards). Not a portal but similar config. See `.mug/docs/api.md`.

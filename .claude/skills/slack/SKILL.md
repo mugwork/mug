@@ -382,7 +382,7 @@ workflow("create-job", async (ctx) => {
     const customer = values?.customer_block?.["customer-picker"]?.selected_option?.text?.text;
     const meta = JSON.parse(ctx.params.metadata || "{}");
 
-    await ctx.exec("jobs", "INSERT INTO jobs (title, priority, customer) VALUES (?, ?, ?)", [title, priority, customer]);
+    await ctx.exec("INSERT INTO jobs (title, priority, customer) VALUES (?, ?, ?)", [title, priority, customer]);
     await ctx.notify.slack({ to: meta.channelId, message: `Job created: ${title} (${priority}) for ${customer}` });
     return { created: true };
   }

@@ -287,8 +287,10 @@ Workflows in `workflows/` are auto-discovered by `mug deploy` — no import need
 
 ## Step 5 — Test locally
 
+New portals are picked up automatically by the running dev server — no restart needed.
+
 ```bash
-mug dev
+mug dev                                    # start dev server (if not already running)
 open http://localhost:8787/<portal-name>
 ```
 
