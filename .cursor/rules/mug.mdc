@@ -53,7 +53,7 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 - `ctx.surfaceUrl(surfaceId, path?)` — generate URL to a surface (dev/prod-aware)
 - `ctx.file(path)` — read a file from `files/` as ArrayBuffer (R2 in prod, local in dev)
 - `ctx.fileText(path)` — read a file as UTF-8 string
-- `ctx.secret(name)` — read a workspace secret by name (from `.mug/secrets`). Throws if not found.
+- `ctx.secret(name)` — read a workspace secret by name (from `.mug/secrets`). Throws if not found. `ctx.credential(name)` is an alias — both work identically in workflows.
 - `ctx.waitFor(eventName, options?)` — pause workflow until an external event arrives. Returns `{ payload, type, timedOut }`. Options: `{ timeout?: "1 hour" | "24 hours", message?: string }`. Zero cost while waiting.
 - `await ctx.waitForUrl(eventName)` — generate a one-time callback URL for embedding in notifications. Returns a URL that, when visited, sends the event to the waiting workflow.
 - `ctx.http(url, options?)` — outbound HTTP request. Returns `{ status, headers, body, json, ok }`. Throws on non-2xx by default (`throwOnError: false` to handle manually). Auto-retries connection errors and 429 with exponential backoff. Options: `{ method?, headers?, body?, throwOnError?, retry?: { attempts? } | false, timeout?, sign?: { secret, header? } }`
@@ -190,7 +190,8 @@ mug logs [workflow]                  # view execution log (--json, --limit N, --
 mug status                          # workspace drift summary + schedule health (--json)
 mug status <workflow> <instanceId>   # check production workflow instance status (--json)
 mug sql <db> <sql>                   # run SQL against databases/<db>.db (alias: mug query)
-mug sql <db> <sql> --dev             # query unified database via dev server (cross-source JOINs work here)
+mug sql _workspace <sql>             # auto-routes through dev server — cross-source JOINs work here
+mug sql <db> <sql> --dev             # query any database via dev server
 mug usage                            # usage across all 6 billing dimensions (--json, --period)
 mug workspace plan                   # view or change workspace plan tier (opens Stripe for paid tiers)
 mug billing                              # view billing + per-meter overage settings (--json)
@@ -198,7 +199,7 @@ mug billing --overage <meter>=on|off     # toggle overage per meter (e.g. operat
 mug billing --cap <meter>=<dollars>      # set overage cap per meter (e.g. ai_credits=50)
 mug billing --notify-email <address>     # set overage notification email
 mug update                           # force-refresh instructions, skills, docs, manifest (auto-runs every 4h)
-mug validate                         # check workspace for issues before deploying (--verbose, --json)
+mug validate                         # check workspace for issues before deploying — includes TypeScript type-checking (--verbose, --json)
 mug deploy                           # deploy to production (includes database push + source archive) (--json)
 mug deploy --dry-run                 # show what would change without deploying
 mug push databases/<name>            # upload local database to production (--json)
@@ -300,6 +301,10 @@ mug deploy                                     # bundle and deploy to Cloudflare
 ```
 MUG_API_KEY is used for all production operations: deploy, run --production, status, usage.
 
+`mug deploy` runs validation automatically before bundling — TypeScript type errors appear as warnings but don't block deploy. The `mug-types.d.ts` file in the workspace root provides type declarations for the `@mugwork/mug` module. Run `mug update` if missing.
+
+**Error notifications:** When a workflow errors in production, the workspace owner and admins receive an email with the error details, failed step, and duration. Errors are also visible in the explorer (`mug dev` → Errors tab). Duplicate emails for the same workflow are suppressed for 5 minutes.
+
 ### Platform Docs
 
 Full API reference with detailed examples in `.mug/docs/`:
@@ -321,7 +326,7 @@ Full API reference with detailed examples in `.mug/docs/`:
 - **Always filter deleted rows** when querying synced data: `WHERE _mug_deleted_at IS NULL`. Synced tables have `_mug_synced_at` and `_mug_deleted_at` system columns.
 - **Unified workspace database.** All connector data lives in one database with prefixed table names (`{source}_{table}`). Cross-source JOINs work naturally: `SELECT * FROM airtable_properties JOIN quickbooks_invoices ON ...`. When a table name is unique across sources, you can use it without the prefix — the resolution engine rewrites the SQL automatically.
 - **databases/ is the local source of truth.** Each `databases/<name>.db` is a SQLite file per source. `mug sql <source> <sql>` reads these directly — no dev server needed. `mug push`/`mug pull` sync them with production (with automatic prefix handling).
-- When running `mug dev`, databases are merged into a unified workspace DO on startup (with prefixed table names) and split back into per-source files on shutdown. **To query the unified database from the CLI, use `mug sql <db> <sql> --dev`** — this routes through the dev server where cross-source JOINs work. Without `--dev`, `mug sql` reads per-source local files that can't join across sources.
+- When running `mug dev`, databases are merged into a unified workspace DO on startup (with prefixed table names) and split back into per-source files on shutdown. **`mug sql _workspace <sql>` auto-routes through the dev server** — cross-source JOINs work here. For per-source queries, `mug sql <source> <sql>` reads local files directly.
 - The dev server has **hot reload** — file changes to surfaces, workflows, agents, and connectors auto-refresh the browser. New connector and workflow files are picked up automatically (no restart needed). The workspace explorer at `/explorer` updates live.
 - Test individual workflows via `/_dev/run/<workflow-name>` (POST) — returns step-by-step results with timing.
 - The `_mug_ops` database is implicit (workflow_runs, workflow_steps)

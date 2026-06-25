@@ -66,7 +66,7 @@ return { skipped: true };
 ## ctx API
 
 - `ctx.query(sql, params?)` — query unified workspace database (table names auto-resolved). `ctx.query("source", sql, params?)` for scoped.
-- `ctx.exec(sql, params?)` — write to workspace database. Always one-arg for your own tables. Two-arg `ctx.exec("source", sql)` is only for writing back to a synced connector — never pass a made-up database name.
+- `ctx.exec(sql, params?)` — write to workspace database. Always one-arg for your own tables. Two-arg `ctx.exec("source", sql)` is only for writing back to a synced connector — never pass a made-up database name. Adding columns to a CREATE TABLE IF NOT EXISTS auto-migrates the existing table.
 - `ctx.ai(model, { prompt, system, maxTokens?, routing?, billing? })` — returns `{ text, model, usage, routing? }`
   - Use tier names: `"fast"` (cheap), `"balanced"` (mid), `"powerful"` (best). See `/ai` skill for multi-provider and BYOK.
 - `ctx.notify.email({ to, message, subject?, fromName?, cta? })` — styled email with optional CTA button. See `/notify` skill.
@@ -76,7 +76,7 @@ return { skipped: true };
 - `ctx.file(path)` — read a file from `files/` as ArrayBuffer (local in dev, R2 in production)
 - `ctx.fileText(path)` — read a file as UTF-8 string (templates, CSV data, JSON configs)
 - `ctx.collect(options)` — create a form that collects data from users, returns the form URL. See `/form` skill for full schema: field types, conditionals, pages, access modes.
-- `ctx.secret(name)` — read a workspace secret by name (from `.mug/secrets`). Throws if not found. For external API keys and tokens not tied to a source.
+- `ctx.secret(name)` — read a workspace secret by name (from `.mug/secrets`). Throws if not found. `ctx.credential(name)` is an alias — both work identically. For external API keys and tokens.
 - `ctx.waitFor(eventName, { timeout?, message? })` — pause until external event. Returns `{ payload, type, timedOut }`.
 - `ctx.waitForUrl(eventName)` — one-time callback URL for embedding in notifications.
 - `ctx.http(url, options?)` — outbound HTTP. Returns `{ status, headers, body, json, ok }`. Throws on non-2xx. Options: `{ method?, headers?, body?, throwOnError?, retry?, timeout?, sign?: { secret, header? } }`.
@@ -157,9 +157,12 @@ Holiday calendar in mug.json: `{ "holidays": { "country": "US", "include": ["chr
 ## Deploy
 
 ```bash
-mug deploy                           # bundle and deploy
+mug validate                         # type-checks code + 40 validation rules
+mug deploy                           # runs validation, bundles, deploys
 mug run <name> --production          # trigger in production (CF Workflows)
 mug status <name> <instanceId>       # check production status
 ```
+
+`mug deploy` runs validation automatically — type errors appear as warnings but don't block deploy. When a workflow errors in production, the workspace owner and admins receive an email with error details. Errors are also visible in the explorer (`mug dev` → Errors tab).
 
 For collecting data from users, see the `/form` skill. For data display and approval UIs, see the `/portal` skill. For email/SMS notifications with CTA buttons and surface links, see the `/notify` skill.

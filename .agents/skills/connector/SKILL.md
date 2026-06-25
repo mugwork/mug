@@ -301,8 +301,8 @@ mug query <slug> "SELECT a.name, b.name FROM <table_a> a JOIN <table_b> b ON a.<
 If there are other sources already connected, demonstrate a **cross-source JOIN** — this is the unified database payoff. Cross-source JOINs require the unified database (dev server or production), not the per-source local files:
 
 ```bash
-# From the CLI — use --dev to query the unified database
-mug query main "SELECT p.address, i.amount FROM <source1>_<table> p JOIN <source2>_<table> i ON p.id = i.property_id" --dev
+# From the CLI — _workspace auto-routes through the dev server
+mug query _workspace "SELECT p.address, i.amount FROM <source1>_<table> p JOIN <source2>_<table> i ON p.id = i.property_id"
 ```
 
 ```typescript
@@ -317,3 +317,11 @@ Show the user what's now queryable. All connector data is in one unified databas
 ## Step 10 — Verify sync schedule
 
 Syncs were configured in Step 4. Confirm the schedule in `mug.json` matches what the user wants. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily at midnight). The workspace tier constrains the minimum interval (Free: daily, Starter: 15 min, Pro: 5 min, Business: 1 min).
+
+## How data gets to production
+
+Local syncs (via `mug dev` + `curl` or `mug run sync`) populate `databases/*.db` files on disk. These are local-only — they don't automatically appear in the deployed workspace.
+
+`mug deploy` pushes code AND data: it bundles the workspace code, deploys it, then uploads any local databases that are newer than what's in production. If the database upload succeeds, the data is live immediately. If it fails (shown as a warning in deploy output), run `mug push --all` to retry.
+
+After the first deploy, scheduled syncs run directly in production — the cron triggers the connector on Cloudflare, and data goes straight into the production Durable Object database. No local sync or push needed for ongoing data.

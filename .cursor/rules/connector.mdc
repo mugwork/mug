@@ -215,11 +215,15 @@ If multiple related tables exist, demonstrate a cross-table JOIN:
 mug query <slug> "SELECT a.name, b.name FROM <table_a> a JOIN <table_b> b ON a.<fk> = b.id"
 ```
 
-If other sources are already connected, demonstrate a **cross-source JOIN** using `--dev` (the unified database lives in the dev server, not in per-source local files):
+If other sources are already connected, demonstrate a **cross-source JOIN** using `_workspace` (auto-routes through the dev server where cross-source data is merged):
 ```bash
-mug query main "SELECT p.address, i.amount FROM <source1>_<table> p JOIN <source2>_<table> i ON p.id = i.property_id" --dev
+mug query _workspace "SELECT p.address, i.amount FROM <source1>_<table> p JOIN <source2>_<table> i ON p.id = i.property_id"
 ```
 
 ### 10. Verify sync schedule
 
 Syncs were configured in step 4. Confirm the schedule in `mug.json` matches what the user wants. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily). Workspace tier constrains the minimum interval (Free: daily, Starter: 15 min, Pro: 5 min, Business: 1 min).
+
+### How data gets to production
+
+Local syncs populate `databases/*.db` files on disk — local-only. `mug deploy` pushes code AND data: it uploads any local databases newer than what's in production. If the upload fails (shown as a warning), run `mug push --all` to retry. After the first deploy, scheduled syncs run directly in production — no local sync or push needed for ongoing data.

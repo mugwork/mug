@@ -36,7 +36,7 @@ const props = await ctx.query("airtable", "SELECT * FROM properties WHERE status
 - All synced data lives in one unified workspace database. Table names are prefixed with the source name (`airtable_contacts`, `quickbooks_invoices`).
 - **Auto-resolution**: if a table name is unique across all sources, use it without the prefix. If ambiguous (e.g., `contacts` in both airtable and hubspot), use the prefixed name or you'll get a clear error listing the options.
 - Always use `?` placeholders for parameterized queries (prevents SQL injection)
-- Locally, each source has its own `databases/<source>.db` file. `mug sql <source> <sql>` queries these directly (no prefix needed). The dev server merges them into a unified DO.
+- Locally, each source has its own `databases/<source>.db` file. `mug sql <source> <sql>` queries these directly (no prefix needed). The dev server merges them into a unified DO. `mug sql _workspace <sql>` auto-routes through the dev server for cross-source queries.
 
 **Throws:** SQL syntax errors, table not found, ambiguous table name (with suggestions).
 
@@ -64,6 +64,8 @@ await ctx.exec("INSERT INTO alerts (id, message, sent_at) VALUES (?, ?, ?)",
 // WRONG — don't pass a database name for your own tables
 // await ctx.exec("main", "CREATE TABLE IF NOT EXISTS alerts ...");
 ```
+
+**Schema evolution is automatic.** If you add columns to a `CREATE TABLE IF NOT EXISTS` statement, the platform detects them and runs `ALTER TABLE ADD COLUMN` for any missing ones. Existing data is preserved. Just update the CREATE TABLE in your workflow code and redeploy — no manual migration needed.
 
 Common patterns:
 ```typescript
@@ -669,9 +671,34 @@ These are set automatically — you don't need to manage them. They're useful wh
 get steps(): StepRecord[]
 ```
 
-### ctx.credential(name?)
+### ctx.secret(name) / ctx.credential(name)
 
-*Source context only.* Resolve an API credential from workspace secrets.
+Read a workspace secret by name. Secrets are stored in `.mug/secrets` via `mug secret set`. `ctx.credential(name)` is an alias — both work identically in workflows.
+
+```typescript
+secret(name: string): string
+credential(name: string): string
+```
+
+Returns the secret value as a string. **Throws** if the secret is not found.
+
+```typescript
+// Read an API key stored in .mug/secrets
+const apiKey = ctx.secret("EXTERNAL_API_KEY");
+// or equivalently:
+const apiKey = ctx.credential("EXTERNAL_API_KEY");
+
+// Use it for outbound HTTP calls
+const res = await fetch("https://api.example.com/data", {
+  headers: { Authorization: `Bearer ${apiKey}` },
+});
+```
+
+Both methods do a direct key-value lookup — any secret set via `mug secret set KEY=VALUE` is accessible by name. Use for external API keys, tokens, or credentials.
+
+#### ctx.credential(name?) in source context
+
+In connector/source callbacks, `ctx.credential()` has additional resolution behavior:
 
 ```typescript
 async credential(name?: string): Promise<string>
@@ -713,28 +740,6 @@ mug secret set AIRTABLE_API_KEY=pat_xxxxx     # store the credential
 Here `auth.value` is `"AIRTABLE_API_KEY"` — the runtime checks if an env var with that name exists (it does, from `.mug/secrets`), and returns its value.
 
 **Throws:** `No credentials for "<source>"` when no credential can be resolved.
-
-### ctx.secret(name)
-
-*Workflow context.* Read a workspace secret by name. Secrets are stored in `.mug/secrets` via `mug secret set`.
-
-```typescript
-secret(name: string): string
-```
-
-Returns the secret value as a string. **Throws** if the secret is not found.
-
-```typescript
-// Read an API key stored in .mug/secrets
-const apiKey = ctx.secret("EXTERNAL_API_KEY");
-
-// Use it for outbound HTTP calls
-const res = await fetch("https://api.example.com/data", {
-  headers: { Authorization: `Bearer ${apiKey}` },
-});
-```
-
-Unlike `ctx.credential()` (which is source-only and resolves through `mug.json` source config), `ctx.secret()` is a direct key-value lookup — any secret set via `mug secret set KEY=VALUE` is accessible by name. Use it when workflows need API keys, tokens, or other secrets that aren't tied to a source.
 
 ### ctx.slack.updateMessage(options)
 
@@ -979,6 +984,21 @@ async rollbackRun(workflowRunId: string): Promise<{
 }>
 ```
 
+### ctx.fetch(url, init?) — source context
+
+*Source context only.* A fetch wrapper that routes requests through the platform's internal service bindings when needed. **Use `ctx.fetch()` instead of raw `fetch()` in connector callbacks** — it works identically for external APIs and avoids connectivity issues (CF error 1019) when calling platform endpoints in production.
+
+```typescript
+async fetch(url: string, init?: RequestInit): Promise<Response>
+```
+
+```typescript
+const res = await ctx.fetch("https://api.example.com/contacts", {
+  headers: { Authorization: `Bearer ${await ctx.credential()}` },
+});
+const data = await res.json();
+```
+
 ### ctx.lastSync
 
 *Source context only.* ISO 8601 timestamp of the last successful sync, or `null` on first sync. Use for incremental sync logic.
@@ -1178,12 +1198,14 @@ workflow("safe-notify", async (ctx) => {
 | `AI credit limit exceeded` | AI credits at 0 remaining | Enable overages at mug.work, `mug workspace plan`, or switch to BYOK (`billing: "ai.anthropic"`) — see [billing.md](billing.md) |
 | `Usage limit exceeded for email` | Email send limit reached | Enable overages at mug.work or `mug workspace plan` — catch in workflow to handle gracefully |
 | `Usage limit exceeded for sms` | SMS send limit reached | Enable overages at mug.work or `mug workspace plan` |
-| `No credentials for "<source>"` | Credential not found | Check `mug secret set` and `mug.json` source config — see [ctx.credential](#ctxcredentialname) |
+| `No credentials for "<source>"` | Credential not found | Check `mug secret set` and `mug.json` source config — see [ctx.secret / ctx.credential](#ctxsecretname--ctxcredentialname) |
 | `Workflow "<name>" not found` | Workflow file not in `workflows/` directory | Ensure the file exists at `workflows/<name>.ts` and uses `workflow("<name>", ...)` to register |
 
 ### Production durability
 
 In production, workflows run as Cloudflare Workflows with durable execution. Each `ctx.*` call becomes a durable step — if the Worker restarts mid-execution, the workflow resumes from the last completed step automatically. AI calls in production include automatic retry (2 retries, exponential backoff).
+
+**Error notifications:** When a workflow errors in production, the workspace owner and admins automatically receive an email with the error details, failed step, and duration. Duplicate emails for the same workflow are suppressed for 5 minutes. Errors are also visible in the explorer (`mug dev` → Errors tab).
 
 ## Webhook-Triggered Workflows
 
@@ -1490,6 +1512,7 @@ External API connections and their sync config. **Credentials are not stored her
 - `auth.type: "basic"` — sends `Authorization: Basic <base64>`
 - `auth.type: "oauth2"` — managed by `mug auth <provider>`, tokens refreshed automatically
 - `syncs` — maps sync names to `{ database, schedule }` pairs
+- `isolated` — set `true` to keep this source in its own Durable Object instead of the unified workspace database. Use for very large datasets approaching the 10 GB DO limit. Isolated sources cannot participate in cross-source JOINs.
 
 ### databases
 
@@ -1593,15 +1616,21 @@ To customize the layout, create `surfaces/_home.json`:
 **Group fields:**
 - `label` — optional group heading. Omit for a section without a header.
 - `description` — optional subtitle below the group heading.
+- `icon` — optional [Lucide icon](https://lucide.dev) name (e.g., `"hard-hat"`, `"receipt"`, `"bar-chart-3"`). Rendered next to the group label.
 - `color` — optional hex color. Tints the group container border and gives it a subtle background fill.
+- `collapsible` — set `true` to render as accordion.
+- `collapsed` — set `true` to start closed (default: open). Only applies when `collapsible` is `true`.
 - `buttons` — action surfaces (compact, horizontal row). Good for forms.
 - `cards` — destination surfaces (larger, stacked). Good for portals.
 
 **Surface item fields** (in both `buttons` and `cards`):
 - `surface` — **(required)** surface ID matching a file in `surfaces/`.
 - `label` — optional override. Falls back to the surface's `title` field.
+- `icon` — optional Lucide icon name. Rendered in the card or button.
 - `color` — optional hex color. Buttons get a colored background. Cards get a colored top border.
 - `description` — *(cards only)* optional context line below the title.
+
+**Named color palette:** Red `#dc2626`, Orange `#ea580c`, Gold `#ca8a04`, Brown `#92400e`, Green `#16a34a`, Teal `#0f766e`, Blue `#2563eb`, Navy `#1e3a8a`, Purple `#7c3aed`, Pink `#db2777`, Maroon `#6b2140`, Gray `#475569`.
 
 Both `buttons` and `cards` are optional per group. Surfaces not listed in any group appear at the bottom as default cards. No `_home.json` = all surfaces shown alphabetically as cards.
 
@@ -1696,6 +1725,7 @@ The `definitions` section enables drift detection — `mug status` compares loca
 | `mug agents` | List agents with descriptions or model |
 | `mug surfaces` | List surfaces with type and description |
 | `mug files` | List files with sizes |
+| `mug tables` | List all tables with source prefix and resolution status (unique/ambiguous) |
 
 ### Development
 
@@ -1713,6 +1743,10 @@ The `definitions` section enables drift detection — `mug status` compares loca
 | `mug invoke <name> "<goal>" --cloud` | Invoke in production (deployed agent) |
 | `mug invoke <name> "<goal>" --local` | Force local dev server |
 | `mug chat <name>` | Start interactive chat session with an agent |
+| `mug brain <agent>` | Inspect agent brain memory (overview) |
+| `mug brain <agent> struggles` | Review unresolved struggles — knowledge gaps and edge cases |
+| `mug brain <agent> sessions` | List recent agent sessions |
+| `mug brain <agent> search <query>` | Search across agent brain (logs, journal, mantra) |
 | `mug status` | Workspace drift summary + schedule health |
 | `mug status <workflow> <instanceId>` | Check production workflow instance status |
 | `mug logs [workflow]` | View execution history (defaults to cloud if deployed) |
@@ -1721,6 +1755,7 @@ The `definitions` section enables drift detection — `mug status` compares loca
 | `mug logs <workflow> --limit <n>` | Show more entries (default: 10) |
 | `mug logs <workflow> --json` | JSON output |
 | `mug sql <database> <sql>` | Run SQL against `databases/<database>.db` (no dev server needed) |
+| `mug sql _workspace <sql>` | Auto-routes through dev server — cross-source JOINs work here |
 | `mug sql <database> <sql> --json` | JSON output |
 | `mug sql <database> <sql> --production` | Run SQL against production database |
 | `mug sql <database> <sql> --dev` | Route through dev server instead of local file |
@@ -1745,7 +1780,7 @@ The `definitions` section enables drift detection — `mug status` compares loca
 | `mug connector scaffold --slug <name>` | Generate TypeScript source from enriched spec |
 | `mug connector init <product>` | Full pipeline: discover → gather → verify → scaffold |
 | `mug connector search <query>` | Search community connector catalog |
-| `mug connector clone --slug <name>` | Clone connector from catalog (spec + scaffold) |
+| `mug connector clone --slug <name>` | Clone connector from catalog (spec + scaffold). Alias: `mug connector pull` |
 
 ### Forms
 
@@ -1783,7 +1818,7 @@ The `definitions` section enables drift detection — `mug status` compares loca
 |---------|-------------|
 | `mug workspace status` | Show workspace metadata, URL, plan tier, last deploy |
 | `mug workspace plan` | View or change plan tier (opens Stripe Checkout for paid tiers) |
-| `mug billing` | View plan, price, next invoice, per-meter overage settings (`--overage`, `--cap`, `--notify-email`, `--json`) |
+| `mug billing` | View plan, price, next invoice, per-meter overage settings (`--overage`, `--cap`, `--notify-email` or `--email`, `--json`) |
 | `mug workspace invite <email>` | Send admin invite to workspace |
 | `mug workspace transfer <email>` | Transfer ownership (sends invite, transfers when accepted) |
 | `mug workspace remove <email>` | Remove member |
@@ -1794,7 +1829,7 @@ The `definitions` section enables drift detection — `mug status` compares loca
 | `mug workspace restore` | Restore an archived workspace (opens Stripe for paid tiers) |
 | `mug workspace delete` | Permanently delete an archived workspace |
 | `mug workspace export` | Export workspace data as `.tar` (`--categories <list>`, `--all`) |
-| `mug create workspace <name>` | Register workspace (`--subdomain <slug>`, `--tier free\|starter\|pro\|business`) |
+| `mug create workspace <name>` | Register workspace (`--subdomain <slug>`, `--tier free\|starter\|pro\|business`, `--interval monthly\|annual`) |
 | `mug account email <new-email>` | Change account email (verifies both old and new email) |
 | `mug account invites` | Show pending incoming and sent invites |
 | `mug account accept <id>` | Accept a workspace invite |

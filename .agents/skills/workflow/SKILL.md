@@ -86,7 +86,7 @@ return { skipped: true };
 ### ctx API reference
 
 - `ctx.query(sql, params?)` — query unified workspace database (table names auto-resolved across sources). `ctx.query("source", sql, params?)` for scoped queries.
-- `ctx.exec(sql, params?)` — write to workspace database. Always use the one-arg form for your own tables. The two-arg form `ctx.exec("source", sql)` is only for writing back to a synced connector source — never pass a made-up database name.
+- `ctx.exec(sql, params?)` — write to workspace database. Always use the one-arg form for your own tables. The two-arg form `ctx.exec("source", sql)` is only for writing back to a synced connector source — never pass a made-up database name. Schema evolution is automatic — adding columns to a CREATE TABLE IF NOT EXISTS will add them to the existing table without losing data.
 - `ctx.ai(model, { prompt, system, maxTokens?, routing?, billing? })` — returns `{ text, model, usage, routing? }`
   - Use tier names: `"fast"` (cheap), `"balanced"` (mid), `"powerful"` (best). For multi-provider config and BYOK, see the `/ai` skill.
 - `ctx.notify.email({ to, message, subject?, fromName?, cta? })` — send styled email with optional CTA button. For templates, surface links, and BYOK, use the `/notify` skill.
@@ -96,7 +96,7 @@ return { skipped: true };
 - `ctx.file(path)` — read a file from `files/` as `ArrayBuffer` (local in dev, R2 in production)
 - `ctx.fileText(path)` — read a file as UTF-8 string. Use for templates, CSV data, JSON configs.
 - `ctx.collect(options)` — create a form that collects data from users. Returns the form URL. For the full form schema walkthrough (field types, conditionals, pages, access modes), use the `/form` skill.
-- `ctx.secret(name)` — read a workspace secret by name (from `.mug/secrets`). Throws if not found. Use for external API keys, tokens, or credentials that aren't tied to a source.
+- `ctx.secret(name)` — read a workspace secret by name (from `.mug/secrets`). Throws if not found. `ctx.credential(name)` is an alias — both work identically in workflows. Use for external API keys, tokens, or credentials.
 - `ctx.waitFor(eventName, { timeout?, message? })` — pause workflow until external event. Returns `{ payload, type, timedOut }`. See Step 5.
 - `ctx.waitForUrl(eventName)` — generate a one-time callback URL for embedding in notifications. See Step 5.
 - `ctx.agent(name, { goal, context?, sessionKey?, caps? })` — invoke a custom AI agent. See the `/agents` skill.
@@ -238,10 +238,13 @@ Built-in holiday slugs: `christmas-eve`, `black-friday`, `easter-monday`. Custom
 ## Step 7 — Deploy
 
 ```bash
-mug deploy
+mug validate     # type-checks workspace code and runs 40+ validation rules
+mug deploy       # runs validation, bundles, and deploys to production
 ```
 
-This bundles the workflow code and uploads it. Scheduled workflows will run automatically in production.
+`mug deploy` runs validation automatically — TypeScript type errors appear as warnings but don't block deploy. Scheduled workflows run automatically in production.
+
+When a workflow errors in production, the workspace owner and admins receive an email with the error details, failed step, and duration. Duplicate emails for the same workflow are suppressed for 5 minutes. Errors are also visible in the explorer (`mug dev` → Errors tab).
 
 To trigger manually in production:
 ```bash
