@@ -33,7 +33,29 @@ Present a brief plan:
 
 Wait for user confirmation.
 
-## Step 2 — Scaffold the portal config
+## Step 2 — Discover table schemas
+
+Before writing queries, discover what tables and columns exist in the workspace database:
+
+```bash
+mug tables --schema
+```
+
+This shows every synced table with column names, types, and row counts. Add `--sample` to see sample rows:
+
+```bash
+mug tables --sample
+```
+
+Requires `mug dev` to be running. Use the column names from this output to write accurate portal queries.
+
+If you need to explore a specific table further:
+
+```bash
+mug query _workspace "SELECT * FROM <table_name> LIMIT 5"
+```
+
+## Step 3 — Scaffold the portal config
 
 ```bash
 mug portal init <name>
@@ -41,7 +63,7 @@ mug portal init <name>
 
 Creates `surfaces/<name>.json` with a template config. Then edit to match the plan.
 
-## Step 3 — Write the portal config
+## Step 4 — Write the portal config
 
 Portal configs are JSON files in `surfaces/`. The structure is:
 
@@ -268,7 +290,7 @@ Each event has `delay` in seconds from the trigger moment (not cumulative). Butt
 
 **Embed mode**: Append `?embed=true` to any surface URL to strip header chrome (logo, session info, logout, breadcrumbs) for iframe embedding. Content (title, tabs, sections, actions) remains. CSP allows framing from `mug.work` and `*.mug.work`.
 
-## Step 4 — Write action handler workflows (if needed)
+## Step 5 — Write action handler workflows (if needed)
 
 Actions trigger workflows. The workflow receives `{ action, ...rowData, _verified_email, _surface, _workspace }`.
 
@@ -285,7 +307,7 @@ workflow("handle-approval", async (ctx) => {
 
 Workflows in `workflows/` are auto-discovered by `mug deploy` — no import needed.
 
-## Step 5 — Test locally
+## Step 6 — Test locally
 
 New portals are picked up automatically by the running dev server — no restart needed.
 
@@ -296,7 +318,7 @@ open http://localhost:8787/<portal-name>
 
 Use the "View As" banner to test as different users. Tab switching works via `?tab=<tabId>`.
 
-## Step 6 — Validate
+## Step 7 — Validate
 
 ```bash
 mug portal list              # show portal surfaces and URLs

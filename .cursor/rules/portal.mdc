@@ -9,6 +9,10 @@ Portals are config-driven JSON files in `surfaces/` that render as tabbed pages 
 
 Full API reference: `.mug/docs/portals.md`
 
+## Discover table schemas first
+
+Before writing portal queries, run `mug tables --schema` (or `--sample` for sample rows) to see synced table names, column types, and row counts. Requires `mug dev` to be running.
+
 ## Config structure
 
 ```json

@@ -256,6 +256,8 @@ mug workspaces                       # list all workspaces — cloud account and
 mug sources                          # list sync sources in this workspace
 mug databases                        # list databases in this workspace
 mug tables                           # list all tables with source prefix and resolution status (unique/ambiguous)
+mug tables --schema                  # show column names, types, and row counts from the running dev server
+mug tables --sample                  # show schemas + sample data rows (requires mug dev running)
 mug workflows                        # list workflows in this workspace
 mug agents                           # list agents in this workspace
 mug surfaces                         # list surfaces in this workspace
