@@ -27,9 +27,9 @@ Based on the user's description, decide:
 1. **Name** — kebab-case, descriptive (e.g., `invoice-analyzer`, `support-responder`)
 2. **Model** — fixed (`"claude-sonnet"`) or dynamic routing (`{ "fast": "claude-haiku", "balanced": "claude-sonnet", "powerful": "claude-opus" }`)
 3. **Tools** — what workspace capabilities it needs:
-   - `query` — read-only SQL against workspace databases
+   - `query` — read-only SQL against the workspace database (defaults to `_workspace` where all synced data lives)
    - `search` — semantic similarity search against synced data
-   - `ask` — natural language Q&A against databases
+   - `ask` — natural language Q&A against workspace data (search + AI synthesis)
    - `notify` — send email/SMS notifications
    - `http` — call external APIs
    - `workspace` — read/write workspace files

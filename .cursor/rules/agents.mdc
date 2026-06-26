@@ -56,9 +56,9 @@ mug chat <name>                                    # interactive chat session (C
 
 ## Tool grants
 
-- `query` — read-only SQL against workspace databases
+- `query` — read-only SQL against the workspace database (defaults to `_workspace` where all synced data lives)
 - `search` — semantic similarity search against synced data
-- `ask` — natural language Q&A against databases (search + AI synthesis)
+- `ask` — natural language Q&A against workspace data (search + AI synthesis)
 - `notify` — send email (`send_email`) and SMS (`send_sms`)
 - `http` — fetch external APIs (`http_request`)
 - `workspace` — read/write workspace files
