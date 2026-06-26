@@ -794,3 +794,12 @@ mug dev                      # serve portals locally (with View As banner)
   ]
 }
 ```
+
+## Debugging
+
+Portal query errors appear in the browser console as `console.error("[mug]", ...)`. If a section renders empty when it should have data, open Chrome DevTools → Console and look for `[mug]` messages. The portal renders empty sections gracefully instead of returning an error page — the console is where the actual error surfaces.
+
+Common errors:
+- `no such table: <name>` — table doesn't exist in the workspace database. For synced tables, run the source sync. For workflow-created tables, ensure the workflow has an INSERT with a column list and redeploy.
+- `no such column: <name>` — column name doesn't match the database schema. Check the synced table schema with `mug db schema <source>`.
+- SQL syntax error — check the query in the portal JSON for typos.

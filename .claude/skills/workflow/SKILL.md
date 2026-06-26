@@ -86,7 +86,7 @@ return { skipped: true };
 ### ctx API reference
 
 - `ctx.query(sql, params?)` — query unified workspace database (table names auto-resolved across sources). `ctx.query("source", sql, params?)` for scoped queries.
-- `ctx.exec(sql, params?)` — write to workspace database. Always use the one-arg form for your own tables. The two-arg form `ctx.exec("source", sql)` is only for writing back to a synced connector source — never pass a made-up database name. Schema evolution is automatic — adding columns to a CREATE TABLE IF NOT EXISTS will add them to the existing table without losing data.
+- `ctx.exec(sql, params?)` — write to workspace database. Always use the one-arg form for your own tables. The two-arg form `ctx.exec("source", sql)` is only for writing back to a synced connector source — never pass a made-up database name. Tables are auto-created at deploy time — if your workflow INSERTs into a table with a column list, the platform creates it automatically (TEXT columns). No separate CREATE TABLE needed. Schema evolution is automatic — adding columns to a CREATE TABLE IF NOT EXISTS will add them to the existing table without losing data.
 - `ctx.ai(model, { prompt, system, maxTokens?, routing?, billing? })` — returns `{ text, model, usage, routing? }`
   - Use tier names: `"fast"` (cheap), `"balanced"` (mid), `"powerful"` (best). For multi-provider config and BYOK, see the `/ai` skill.
 - `ctx.notify.email({ to, message, subject?, fromName?, cta? })` — send styled email with optional CTA button. For templates, surface links, and BYOK, use the `/notify` skill.

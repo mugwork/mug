@@ -42,7 +42,7 @@ This is a Mug workspace. Write TypeScript using Mug's framework APIs.
 - Every workflow must have a `description` in options. Add `//` comments above each `ctx.*` call and `return` — these appear as step descriptions in the explorer.
 - `ctx.query(sql, params?)` — query the unified workspace database (all sources). Table names auto-resolve: `"contacts"` → `airtable_contacts` if unique across sources. Use prefixed names when ambiguous.
 - `ctx.query("source", sql, params?)` — query scoped to one source (SQL rewritten automatically with source prefix)
-- `ctx.exec(sql, params?)` — write to workspace database. Always use the one-arg form for your own tables (CREATE TABLE, INSERT, UPDATE, DELETE). The two-arg form `ctx.exec("source", sql)` is only for writing back to a synced connector source — never pass a database name for tables you create.
+- `ctx.exec(sql, params?)` — write to workspace database. Always use the one-arg form for your own tables. Tables are auto-created at deploy time from INSERT INTO column lists — no separate CREATE TABLE needed. The two-arg form `ctx.exec("source", sql)` is only for writing back to a synced connector source — never pass a database name for tables you create.
 - `ctx.ai()` — see **AI** section above
 - `ctx.notify.email({ to, message, subject?, fromName?, cta? })` / `.sms({ to, message })` / `.slack({ to, message, blocks?, thread_ts? })` / `.channel(name, options)` for custom channels
 - `ctx.surfaceUrl(surfaceId, path?)` — generate URL to a surface (dev/prod-aware)

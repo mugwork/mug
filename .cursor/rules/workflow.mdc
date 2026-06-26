@@ -66,7 +66,7 @@ return { skipped: true };
 ## ctx API
 
 - `ctx.query(sql, params?)` — query unified workspace database (table names auto-resolved). `ctx.query("source", sql, params?)` for scoped.
-- `ctx.exec(sql, params?)` — write to workspace database. Always one-arg for your own tables. Two-arg `ctx.exec("source", sql)` is only for writing back to a synced connector — never pass a made-up database name. Adding columns to a CREATE TABLE IF NOT EXISTS auto-migrates the existing table.
+- `ctx.exec(sql, params?)` — write to workspace database. Always one-arg for your own tables. Two-arg `ctx.exec("source", sql)` is only for writing back to a synced connector — never pass a made-up database name. Tables are auto-created at deploy time from INSERT INTO column lists — no separate CREATE TABLE needed. Adding columns to a CREATE TABLE IF NOT EXISTS auto-migrates the existing table.
 - `ctx.ai(model, { prompt, system, maxTokens?, routing?, billing? })` — returns `{ text, model, usage, routing? }`
   - Use tier names: `"fast"` (cheap), `"balanced"` (mid), `"powerful"` (best). See `/ai` skill for multi-provider and BYOK.
 - `ctx.notify.email({ to, message, subject?, fromName?, cta? })` — styled email with optional CTA button. See `/notify` skill.
@@ -134,7 +134,7 @@ mug logs <name> --production  # force production logs
 ```
 
 Common issues:
-- Table doesn't exist → add `ctx.exec()` to create it, or sync the source first
+- Table doesn't exist → for synced tables, run the source sync first. For workflow tables, ensure your INSERT has a column list and redeploy — the platform auto-creates the table.
 - AI prompt returns unexpected format → adjust the prompt or add parsing
 
 ## Scheduling

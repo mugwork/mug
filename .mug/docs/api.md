@@ -65,6 +65,8 @@ await ctx.exec("INSERT INTO alerts (id, message, sent_at) VALUES (?, ?, ?)",
 // await ctx.exec("main", "CREATE TABLE IF NOT EXISTS alerts ...");
 ```
 
+**Tables are auto-created at deploy time.** The platform scans your workflow code for INSERT INTO statements with column lists and auto-creates any tables that don't exist yet (using TEXT columns). You don't need a separate `CREATE TABLE IF NOT EXISTS` — just INSERT and the table will be there when the workflow runs. Explicit `CREATE TABLE IF NOT EXISTS` still works and takes precedence if you need specific column types or constraints.
+
 **Schema evolution is automatic.** If you add columns to a `CREATE TABLE IF NOT EXISTS` statement, the platform detects them and runs `ALTER TABLE ADD COLUMN` for any missing ones. Existing data is preserved. Just update the CREATE TABLE in your workflow code and redeploy — no manual migration needed.
 
 Common patterns:
@@ -1209,7 +1211,7 @@ workflow("safe-notify", async (ctx) => {
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `no such table: <name>` | Table doesn't exist in the database | Run the source sync first, or create the table with `ctx.exec()` |
+| `no such table: <name>` | Table doesn't exist in the database | For synced tables: run the source sync first. For workflow tables: ensure the workflow has an INSERT INTO with a column list — the platform auto-creates tables at deploy time. Redeploy with `mug deploy`. |
 | `AI not configured: missing ANTHROPIC_API_KEY` | No API key in dev | `mug secret set ANTHROPIC_API_KEY=sk-ant-...` |
 | `AI request failed (429)` | Rate limit hit | Reduce concurrency or add delays between AI calls |
 | `AI credit limit exceeded` | AI credits at 0 remaining | Enable overages at mug.work, `mug workspace plan`, or switch to BYOK (`billing: "ai.anthropic"`) — see [billing.md](billing.md) |

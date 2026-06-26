@@ -323,4 +323,6 @@ mug portal list              # show portal surfaces and URLs
 
 **Home screen**: The workspace home screen (`subdomain.mug.work/`) is configured via `surfaces/_home.json` — not a portal, but uses a similar JSON config with groups, buttons, and cards. See `.mug/docs/api.md` for the full schema.
 
+**Debugging**: Portal query errors appear in the browser console (`console.error("[mug]", ...)`). If a section shows empty when it shouldn't, open Chrome DevTools → Console and look for `[mug]` errors. Common causes: missing table (redeploy to auto-create), typo in column name, or SQL syntax error. The portal renders empty sections gracefully instead of failing — the console is where you find out why.
+
 For form creation, see the `/form` skill. For complex workflows, see the `/workflow` skill. For email notifications, see the `/notify` skill.

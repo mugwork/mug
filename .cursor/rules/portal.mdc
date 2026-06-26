@@ -159,3 +159,5 @@ mug dev                      # serve locally (auto-detects new portals — no re
 ```
 
 **Home screen**: `surfaces/_home.json` configures the workspace root URL layout (groups, buttons, cards). Not a portal but similar config. See `.mug/docs/api.md`.
+
+**Debugging**: Portal query errors appear in the browser console (`console.error("[mug]", ...)`). If a section shows empty when it shouldn't, open Chrome DevTools → Console and look for `[mug]` errors — the portal renders empty sections gracefully instead of failing.
