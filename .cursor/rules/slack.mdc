@@ -133,16 +133,21 @@ Action_id on the select block must match the key. User's typed text passed as `%
 
 ## App Setup
 
-Run `mug slack setup` to create the Slack app and store credentials. Interactive — two paths:
+`mug slack setup` supports flag-driven mode for AI agents — no readline prompts needed.
 
-- **Developer is admin in target workspace:** CLI opens config token page → auto-creates app via Manifest API → all credentials stored. Print install URL.
-- **Developer is NOT admin:** CLI generates manifest URL + instructions for client admin. Run `mug slack setup` again to enter credentials as they come in.
+**Check state:** `mug slack setup --json` — returns `appId`, `hasCredentials`, `hasConfigToken`, `configTokenValid`, `hasBotToken`, `hasAgents`, plus relevant URLs.
 
-Both paths store config token for auto-update on future `mug deploy`. Setup detects existing state — only asks for missing pieces.
+**New app (admin):** check state → open `https://api.slack.com/apps` for user → user copies config tokens → `mug slack setup --config-token "..." --refresh-token "..."` → `mug slack setup --create-app` → `mug slack setup --install-url --open`
+
+**New app (not admin):** `mug slack setup --admin-instructions` outputs copy-pasteable instructions with manifest JSON for the user to send to their Slack admin → admin sends back 6 values → `mug slack setup --app-id "..." --client-id "..." --client-secret "..." --signing-secret "..."` → `mug slack setup --config-token "..." --refresh-token "..."` → `mug slack setup --install-url --open`
+
+**Refresh expired token:** check state (look for `configTokenValid: false`) → open `https://api.slack.com/apps` for user → user copies fresh tokens → `mug slack setup --config-token "..." --refresh-token "..."`
+
+**Reinstall (scope changes):** `mug slack setup --install-url --open`
+
+**Other flags:** `--manifest` (output manifest JSON), `--install-url` (print install URL), `--install-url --open` (print and open)
 
 After setup: `mug deploy` (push manifest) → share install URL → bot token auto-stored on OAuth callback.
-
-**Expired config tokens:** Config tokens expire if not rotated between deploys. `mug deploy` fails with `invalid_auth` and prints: `Config token expired — run mug slack setup to refresh.` The `mug slack setup` command validates tokens and prompts for fresh ones. **This command requires interactive terminal input — do not run it as an AI agent.** Instead, tell the user to run: `cd <workspace-path> && mug slack setup`
 
 ## AI Agent DMs (Agents & AI Apps)
 

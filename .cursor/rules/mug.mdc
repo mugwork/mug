@@ -226,8 +226,12 @@ mug auth <provider>                  # connect provider via OAuth (e.g. airtable
 mug demo enable <surface> --as <id>  # share surface pre-auth'd (--expires, --notify, --no-workflows)
 mug demo disable <surface>           # revoke demo access
 mug demo status                      # show active demos
-mug slack setup                       # set up Slack app (interactive — REQUIRES TERMINAL, do not run as AI agent)
-mug slack token                       # set or rotate Slack bot/refresh tokens (--access-token, --refresh-token)
+mug slack setup --json                # check Slack app state (machine-readable)
+mug slack setup --config-token T --refresh-token T  # save config tokens
+mug slack setup --create-app          # create Slack app non-interactively
+mug slack setup --admin-instructions  # instructions + manifest for Slack admin
+mug slack setup --install-url --open  # open install URL in browser
+mug slack token                       # set or rotate Slack config tokens (--access-token, --refresh-token)
 mug webhooks                          # list webhook URLs, inbound channels, event triggers
 mug brain <agent>                     # inspect agent brain (local BRAIN.db, falls back to cloud if missing)
 mug brain <agent> struggles           # review unresolved struggles — knowledge gaps and edge cases
@@ -277,10 +281,11 @@ The pipeline: **discover → gather → verify → scaffold**. You research the 
   "<name>": {
     "auth": { "type": "bearer|api-key|basic|oauth2", "value": "<credential>" },
     "baseUrl": "<API root URL>",
-    "syncs": { "<sync-name>": { "database": "<db>", "schedule": "*/15 * * * *" } }
+    "syncs": { "<sync-name>": { "database": "<db>" } }
   }
 }
 ```
+Set the sync schedule in the connector's `source()` or `connector()` call via `syncSchedule: "*/15 * * * *"` (not in mug.json).
 
 ### Credentials
 

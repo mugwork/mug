@@ -29,6 +29,7 @@ import { source } from "@mugwork/mug";
 source({
   name: "<name>",
   database: "<name>",
+  syncSchedule: "*/15 * * * *",
   tables: [{
     name: "<table>",
     primaryKey: "id",
@@ -55,6 +56,7 @@ import { connector } from "@mugwork/mug";
 connector({
   name: "<name>",
   database: "<name>",
+  syncSchedule: "*/15 * * * *",
   tables: [{
     name: "<table>",
     primaryKey: "id",
@@ -207,15 +209,14 @@ mug secret set <SLUG>_API_KEY=<the credential>
     "baseUrl": "<API base URL>",
     "syncs": {
       "<slug>": {
-        "database": "<slug>",
-        "schedule": "*/15 * * * *"
+        "database": "<slug>"
       }
     }
   }
 }
 ```
 
-**The `syncs` entry is required** — without it, data won't sync to the local database or appear in the workspace explorer. The `database` value must match the connector's `database` field. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily at midnight).
+**The `syncs` entry is required** — without it, data won't sync to the local database or appear in the workspace explorer. The `database` value must match the connector's `database` field. The sync schedule is set via `syncSchedule` in the connector's `source()` or `connector()` call (not in mug.json). Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily at midnight).
 
 For `api-key` auth, also include `"header": "<header-name>"` in the auth object.
 
@@ -271,34 +272,44 @@ Connectors in `connectors/` are auto-discovered by `mug deploy` — no import ne
    ```
    (Run in background or a separate terminal. If the dev server is already running, it auto-detects the new connector — no restart needed.)
 
-2. Trigger the first sync:
+2. Trigger the first sync. Check the dev server output for the port — it auto-selects a free port starting from 8787:
    ```
-   curl -s -X POST http://localhost:8787/sync/<slug>
+   curl -s -X POST http://localhost:<port>/sync/<slug>
    ```
-   Note: `mug dev` starts on port 8787 by default, but auto-increments (8788, 8789, ...) if that port is busy. The CLI commands (`mug run`, `mug query`, etc.) auto-discover the active port.
+   The sync response includes ready-to-use commands:
+   - `query` — a working `mug query` command to check the data immediately
+   - `pull` — `mug pull databases/<slug>` to download the source's tables locally
+   - `push` — `mug push databases/<slug>` to upload local changes back
 
-3. Verify data landed:
+3. Verify data landed using the `_workspace` database (this is where synced data lives):
    ```
-   mug query <slug> "SELECT name FROM sqlite_master WHERE type='table'"
-   mug query <slug> "SELECT count(*) FROM <first-table>"
+   mug query _workspace "SELECT count(*) FROM <slug>_<first-table>"
    ```
    If count is 0 or the query fails, check the source's `fetch` function and the sync response for errors.
 
+**Where synced data lives:** Synced data goes into the unified `_workspace` database (a Durable Object), not into `databases/<slug>.db` files. Tables are prefixed with the source name: `<slug>_<table>`. The dev server writes data back to local `databases/<slug>.db` files in the background, but this is async — `mug query _workspace` is the reliable immediate path. To get a local copy on demand: `mug pull databases/<slug>`.
+
 ## Step 9 — Show the user their data
 
-Run a sample query across the synced tables and present the results to the user:
+Query through the unified workspace database. Tables are prefixed with the source slug:
+
+```
+mug query _workspace "SELECT * FROM <slug>_<table> LIMIT 5"
+```
+
+If you pulled the database locally (`mug pull databases/<slug>`), you can query the local file without the prefix:
 
 ```
 mug query <slug> "SELECT * FROM <table> LIMIT 5"
 ```
 
-If there are multiple tables with a relationship (e.g., a foreign key), demonstrate a cross-table JOIN:
+If there are multiple tables with a relationship, demonstrate a cross-table JOIN:
 
 ```
-mug query <slug> "SELECT a.name, b.name FROM <table_a> a JOIN <table_b> b ON a.<fk> = b.id"
+mug query _workspace "SELECT a.name, b.name FROM <slug>_<table_a> a JOIN <slug>_<table_b> b ON a.<fk> = b.id"
 ```
 
-If there are other sources already connected, demonstrate a **cross-source JOIN** — this is the unified database payoff. Cross-source JOINs require the unified database (dev server or production), not the per-source local files:
+If there are other sources already connected, demonstrate a **cross-source JOIN** — this is the unified database payoff:
 
 ```bash
 # From the CLI — _workspace auto-routes through the dev server
@@ -316,11 +327,11 @@ Show the user what's now queryable. All connector data is in one unified databas
 
 ## Step 10 — Verify sync schedule
 
-Syncs were configured in Step 4. Confirm the schedule in `mug.json` matches what the user wants. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily at midnight). The workspace tier constrains the minimum interval (Free: daily, Starter: 15 min, Pro: 5 min, Business: 1 min).
+Confirm the `syncSchedule` in the connector's `source()` or `connector()` call matches what the user wants. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily at midnight). The workspace tier constrains the minimum interval (Free: daily, Starter: 15 min, Pro: 5 min, Business: 1 min).
 
 ## How data gets to production
 
-Local syncs (via `mug dev` + `curl` or `mug run sync`) populate `databases/*.db` files on disk. These are local-only — they don't automatically appear in the deployed workspace.
+Local syncs (via `mug dev` + `curl`) populate the dev server's `_workspace` Durable Object. The dev server writes data back to `databases/*.db` files in the background. To force a local copy: `mug pull databases/<slug>`. To upload local changes: `mug push databases/<slug>`.
 
 `mug deploy` pushes code AND data: it bundles the workspace code, deploys it, then uploads any local databases that are newer than what's in production. If the database upload succeeds, the data is live immediately. If it fails (shown as a warning in deploy output), run `mug push --all` to retry.
 

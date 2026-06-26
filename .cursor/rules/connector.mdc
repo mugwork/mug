@@ -18,6 +18,7 @@ import { source } from "@mugwork/mug";
 source({
   name: "<name>",
   database: "<name>",
+  syncSchedule: "*/15 * * * *",
   tables: [{
     name: "<table>",
     primaryKey: "id",
@@ -41,6 +42,7 @@ import { connector } from "@mugwork/mug";
 connector({
   name: "<name>",
   database: "<name>",
+  syncSchedule: "*/15 * * * *",
   tables: [{
     name: "<table>",
     primaryKey: "id",
@@ -149,15 +151,14 @@ Add source config to `mug.json` with syncs configured:
     "baseUrl": "<API base URL>",
     "syncs": {
       "<slug>": {
-        "database": "<slug>",
-        "schedule": "*/15 * * * *"
+        "database": "<slug>"
       }
     }
   }
 }
 ```
 
-**The `syncs` entry is required** — without it, data won't sync to the local database or appear in the workspace explorer. The `database` value must match the connector's `database` field. All synced tables land in the unified workspace database with `{source}_{table}` prefixed names, enabling cross-source JOINs. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily).
+**The `syncs` entry is required** — without it, data won't sync to the local database or appear in the workspace explorer. The `database` value must match the connector's `database` field. All synced tables land in the unified workspace database with `{source}_{table}` prefixed names, enabling cross-source JOINs. Set the sync schedule via `syncSchedule` in the connector's `source()` or `connector()` call. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily).
 
 For `api-key` auth, also include `"header": "<header-name>"` in the auth object.
 
@@ -195,35 +196,43 @@ The generated code is a starting point — customize table definitions, add filt
 
 ### 8. Sync and verify data
 
+If the dev server is already running, it hot-reloads the new connector file — no restart needed.
+
 ```bash
-mug dev                                                    # start dev server (auto-detects new connectors — no restart needed)
-curl -s -X POST http://localhost:8787/sync/<slug>           # trigger first sync
-mug query <slug> "SELECT name FROM sqlite_master WHERE type='table'"  # check tables
-mug query <slug> "SELECT count(*) FROM <first-table>"      # check row count
+mug dev                                                    # start dev server if not running (check output for port)
+curl -s -X POST http://localhost:<port>/sync/<slug>        # trigger first sync — response includes query/pull/push commands
+mug query _workspace "SELECT count(*) FROM <slug>_<first-table>"  # verify data landed
 ```
 
-If count is 0, check the source's `fetch` function and the sync response for errors.
+**Where synced data lives:** Synced data goes into the unified `_workspace` database, not `databases/<slug>.db` files. Tables are prefixed: `<slug>_<table>`. The dev server writes back to local files in the background, but `mug query _workspace` is the reliable immediate path. To get a local copy: `mug pull databases/<slug>`. To push local changes: `mug push databases/<slug>`.
 
 ### 9. Show the data
 
 ```bash
+mug query _workspace "SELECT * FROM <slug>_<table> LIMIT 5"
+```
+
+If you pulled locally (`mug pull databases/<slug>`), query without the prefix:
+```bash
 mug query <slug> "SELECT * FROM <table> LIMIT 5"
 ```
 
-If multiple related tables exist, demonstrate a cross-table JOIN:
+Cross-table JOIN (same source):
 ```bash
-mug query <slug> "SELECT a.name, b.name FROM <table_a> a JOIN <table_b> b ON a.<fk> = b.id"
+mug query _workspace "SELECT a.name, b.name FROM <slug>_<table_a> a JOIN <slug>_<table_b> b ON a.<fk> = b.id"
 ```
 
-If other sources are already connected, demonstrate a **cross-source JOIN** using `_workspace` (auto-routes through the dev server where cross-source data is merged):
+Cross-source JOIN (multiple sources — the unified database payoff):
 ```bash
 mug query _workspace "SELECT p.address, i.amount FROM <source1>_<table> p JOIN <source2>_<table> i ON p.id = i.property_id"
 ```
 
 ### 10. Verify sync schedule
 
-Syncs were configured in step 4. Confirm the schedule in `mug.json` matches what the user wants. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily). Workspace tier constrains the minimum interval (Free: daily, Starter: 15 min, Pro: 5 min, Business: 1 min).
+Confirm the `syncSchedule` in the connector's `source()` or `connector()` call matches what the user wants. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily). Workspace tier constrains the minimum interval (Free: daily, Starter: 15 min, Pro: 5 min, Business: 1 min).
 
 ### How data gets to production
 
-Local syncs populate `databases/*.db` files on disk — local-only. `mug deploy` pushes code AND data: it uploads any local databases newer than what's in production. If the upload fails (shown as a warning), run `mug push --all` to retry. After the first deploy, scheduled syncs run directly in production — no local sync or push needed for ongoing data.
+Local syncs populate the dev server's `_workspace` Durable Object. The dev server writes data back to `databases/*.db` files in the background. To force a local copy: `mug pull databases/<slug>`. To upload local changes: `mug push databases/<slug>`.
+
+`mug deploy` pushes code AND data: it uploads any local databases newer than what's in production. If the upload fails (shown as a warning), run `mug push --all` to retry. After the first deploy, scheduled syncs run directly in production — no local sync or push needed for ongoing data.

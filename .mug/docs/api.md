@@ -114,7 +114,9 @@ const result = await ctx.ai("fast", {
 // result.routing = { tier: "fast", model: "gpt-5.4-nano", provider: "openai", reason: "tier:fast" }
 ```
 
-**Throws:** API rate limits, invalid model, network errors, BYOK key not found. In production, AI calls auto-retry (2 retries, exponential backoff).
+**Works in local dev** — the dev server proxies AI calls to the platform API (requires `mug login`). In production, AI calls auto-retry (2 retries, exponential backoff).
+
+**Throws:** API rate limits, invalid model, network errors, BYOK key not found.
 
 ### ctx.search(query, options?)
 
@@ -610,7 +612,22 @@ When a workflow handles a Slack modal `view_submission` (triggered via `ctx.slac
 
 #### `mug run` (CLI)
 
-Currently empty (`{}`). Params from CLI are not yet supported — test handler workflows by submitting forms or triggering portal actions.
+Currently empty (`{}`). To test workflows with params locally, curl the dev server directly:
+
+```bash
+curl -s -X POST http://localhost:<port>/run/<workflow> \
+  -H "Content-Type: application/json" \
+  -d '{"params": {"unit": "6A", "description": "Leaking faucet"}}'
+```
+
+The `/run/` endpoint accepts both formats — a `params` wrapper or a flat body:
+
+```bash
+# Also works — flat body becomes ctx.params directly
+curl -s -X POST http://localhost:<port>/run/<workflow> \
+  -H "Content-Type: application/json" \
+  -d '{"unit": "6A", "description": "Leaking faucet"}'
+```
 
 ### ctx.isDemo
 
@@ -1843,8 +1860,8 @@ The `definitions` section enables drift detection — `mug status` compares loca
 |---------|-------------|
 | `mug webhooks` | List webhook URLs, inbound channels, and event triggers |
 | `mug issue` | File a bug report or feature request on GitHub (`--dry-run` to preview) |
-| `mug slack setup` | Set up Slack app (interactive — creates app, stores credentials) |
-| `mug slack token` | Set or rotate Slack bot/refresh tokens (`--access-token`, `--refresh-token`) |
+| `mug slack setup` | Set up Slack app (`--json`, `--config-token`, `--create-app`, `--install-url`, `--admin-instructions`, `--manifest`) |
+| `mug slack token` | Set or rotate Slack config tokens (`--access-token`, `--refresh-token`) |
 
 ### Deployment
 

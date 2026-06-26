@@ -246,39 +246,53 @@ After first deploy with chat agents, three steps require manual action in Slack 
 
 ## App Setup
 
-Run `mug slack setup` to create the Slack app and configure credentials. The command is interactive and handles two paths:
+`mug slack setup` supports both interactive (terminal) and flag-driven (agent) modes. All flags work without readline prompts.
 
-**Path A — Developer is admin in target Slack workspace:**
-1. CLI opens Slack's config token generation page in the browser
-2. Developer generates a token for the target workspace, pastes the access token and refresh token
-3. CLI calls `apps.manifest.create` via dispatch — app is created automatically
-4. All credentials (app ID, client ID, client secret, signing secret) auto-stored as workspace secrets
-5. CLI prints the install URL
+### Check state
 
-**Path B — Developer is NOT admin in target workspace:**
-1. CLI generates a manifest URL and clear instructions to send to the client admin
-2. Client admin clicks the URL to create the app, generates a config token, sends 6 values back
-3. Developer runs `mug slack setup` again to enter the credentials
+```bash
+mug slack setup --json
+```
 
-The command detects existing state — it only asks for what's missing. Run it multiple times as credentials come in.
+Returns: `appId`, `hasCredentials`, `hasConfigToken`, `configTokenValid`, `hasBotToken`, `hasAgents`, `installUrl`, `configTokenUrl`, plus app-specific URLs when an app exists.
 
-To manually set tokens without the interactive flow: `mug slack token --access-token xoxb-... --refresh-token xoxe-...`
+### New app — developer is admin
 
-### Expired config tokens
+1. `mug slack setup --json` — check current state
+2. Open `https://api.slack.com/apps` for the user — they generate a config token
+3. `mug slack setup --config-token "xoxe.xoxp-..." --refresh-token "xoxe-..."` — save tokens
+4. `mug slack setup --create-app` — create Slack app via Manifest API
+5. `mug slack setup --install-url --open` — open install URL in browser
 
-Config tokens have a 12-hour expiry. `mug deploy` rotates them automatically on each deploy. If too much time passes between deploys, both the access and refresh tokens expire. Symptoms:
+### New app — developer is NOT admin
+
+1. `mug slack setup --admin-instructions` — outputs copy-pasteable plain text with numbered steps and manifest JSON. Developer sends this to their Slack admin.
+2. Admin follows instructions, sends back 6 values.
+3. `mug slack setup --app-id "..." --client-id "..." --client-secret "..." --signing-secret "..."` — save credentials
+4. `mug slack setup --config-token "xoxe.xoxp-..." --refresh-token "xoxe-..."` — save tokens
+5. `mug slack setup --install-url --open` — install the app
+
+### Refresh expired config token
+
+Config tokens have a 12-hour expiry. `mug deploy` rotates them automatically. If too much time passes between deploys, both tokens expire:
 
 - `mug deploy` fails with: `Slack deploy failed: {"status":"update_failed","error":"invalid_auth"}`
 - Followed by: `Config token expired — run mug slack setup to refresh.`
 
-Fix: run `mug slack setup` — it validates the stored token and prompts for a fresh one if expired.
+Fix: open `https://api.slack.com/apps` → generate fresh tokens → `mug slack setup --config-token "..." --refresh-token "..."`
 
-**Non-interactive environments:** `mug slack setup` requires terminal input for token entry. When run without a TTY (e.g., by an AI coding agent), it prints the command the user should run and exits:
+### Reinstall (scope changes)
 
+```bash
+mug slack setup --install-url --open
 ```
-Config token has expired. Run this command in a terminal to refresh:
 
-  cd /path/to/workspace && mug slack setup
+### Other flags
+
+```bash
+mug slack setup --manifest           # output generated manifest JSON
+mug slack setup --install-url        # print install URL
+mug slack setup --install-url --open # print and open in browser
 ```
 
 ### After setup

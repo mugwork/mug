@@ -27,19 +27,15 @@ If no argument or unrecognized argument, show available commands and ask which t
 
 ## Dev Server
 
+The dev server **hot-reloads** file changes automatically — editing connectors, workflows, agents, surfaces, or config files takes effect immediately without a restart. Only restart after a CLI update (`mug update`).
+
 Check if a dev server is already running by looking for the PID file:
 
 ```bash
 cat .mug/dev.pid 2>/dev/null
 ```
 
-If a PID file exists with a running process, shut it down first:
-
-```bash
-mug shutdown
-```
-
-Then start the dev server:
+If a dev server is already running, you're done — it will pick up your changes. Only start a new one if no server is running:
 
 ```bash
 mug dev

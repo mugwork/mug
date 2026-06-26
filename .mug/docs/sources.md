@@ -114,6 +114,7 @@ import { source } from "@mugwork/mug";
 source({
   name: string;             // unique identifier, used in sync URLs and CLI
   database: string;         // SQLite database name (one DB per source)
+  syncSchedule?: string;    // cron expression for production sync schedule
   tables: TableDef[];       // tables to sync
   baseUrl?: string;         // API root URL, prepended to table endpoints
   rateLimits?: RateLimitConfig;
@@ -417,6 +418,7 @@ import { source } from "@mugwork/mug";
 source({
   name: "hubspot",
   database: "hubspot",
+  syncSchedule: "*/15 * * * *",
   baseUrl: "https://api.hubapi.com",
   rateLimits: { requestsPerSecond: 10 },
   errorRetry: { maxRetries: 3, retryOn429: true, backoffMs: 1000 },
@@ -471,7 +473,7 @@ source({
 
 ## mug.json syncs config
 
-The connector TypeScript file defines *what* to sync. The `syncs` entry in `mug.json` tells the platform *when* to sync and *where* to store it. **Without this config, data won't sync to the local database or appear in the workspace explorer.**
+The connector TypeScript file defines *what* to sync and *when* (via `syncSchedule`). The `syncs` entry in `mug.json` tells the platform *where* to store it and configures auth. **Without this config, data won't sync to the local database or appear in the workspace explorer.**
 
 ```json
 {
@@ -481,8 +483,7 @@ The connector TypeScript file defines *what* to sync. The `syncs` entry in `mug.
       "baseUrl": "https://api.example.com/v1",
       "syncs": {
         "<connector-filename>": {
-          "database": "<database-name>",
-          "schedule": "*/15 * * * *"
+          "database": "<database-name>"
         }
       }
     }
@@ -494,10 +495,22 @@ The connector TypeScript file defines *what* to sync. The `syncs` entry in `mug.
 |-------|-------------|
 | `syncs` key | Must match the connector filename (without `.ts`) in `connectors/` |
 | `database` | Must match the `database` field in the `source()` or `connector()` call |
-| `schedule` | Cron expression. Minimum interval depends on workspace tier: Free = daily, Starter = 15 min, Pro = 5 min, Business = 1 min |
 | `isolated` | Optional. Set `true` to keep this source in its own Durable Object instead of the unified workspace database. Use for very large datasets approaching the 10 GB DO limit. Isolated sources cannot participate in cross-source JOINs. |
 
-Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily).
+## Sync schedule
+
+Set the sync schedule in the connector's `source()` or `connector()` call via `syncSchedule`:
+
+```typescript
+source({
+  name: "example",
+  database: "example",
+  syncSchedule: "*/15 * * * *",
+  tables: [/* ... */],
+});
+```
+
+Minimum interval depends on workspace tier: Free = daily, Starter = 15 min, Pro = 5 min, Business = 1 min. Common schedules: `*/15 * * * *` (every 15 min), `0 * * * *` (hourly), `0 */6 * * *` (every 6 hours), `0 0 * * *` (daily).
 
 ### Unified workspace database
 

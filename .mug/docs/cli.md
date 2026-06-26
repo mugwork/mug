@@ -533,18 +533,26 @@ Opens a browser for OAuth flow. Stores the credential in `.mug/secrets` on compl
 
 ### mug slack setup
 
-Set up a Slack app for this workspace. Interactive flow — creates the app via Slack's manifest API, stores credentials.
+Set up a Slack app for this workspace. Supports both interactive and flag-driven (agent) modes.
 
 ```bash
-mug slack setup
+mug slack setup                    # interactive flow
+mug slack setup --json             # machine-readable state
+mug slack setup --config-token T --refresh-token T  # save config tokens
+mug slack setup --app-id A --client-id B --client-secret C --signing-secret D  # save credentials
+mug slack setup --create-app       # create app non-interactively
+mug slack setup --install-url      # print install URL
+mug slack setup --install-url --open  # print and open in browser
+mug slack setup --manifest         # output manifest JSON
+mug slack setup --admin-instructions  # copy-pasteable instructions for Slack admin
 ```
 
 ### mug slack token
 
-Manually set Slack tokens. Use when `mug slack setup` can't be run interactively or to recover from token issues.
+Update the Slack config token. Use to recover from expired tokens.
 
 ```bash
-mug slack token --access-token xoxb-... --refresh-token xoxe-...
+mug slack token --access-token xoxe.xoxp-... --refresh-token xoxe-...
 ```
 
 ## Demo Mode
